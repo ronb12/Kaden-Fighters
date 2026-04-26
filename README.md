@@ -34,6 +34,22 @@ Browser-based martial arts fighting game (HTML5 Canvas).
 - `index.html`: the full game
 - `assets/`: sprites, icons, stage art
 - `vercel.json`: static headers for long-term asset caching
+- `api/`: Vercel serverless routes (Neon Postgres)
+- `neon/schema.sql`: SQL to create tables (run once in Neon)
+
+## Neon (Postgres)
+
+The canvas game runs in the browser; **Neon** stores data server-side (e.g. leaderboards).
+
+1. Create a project at [Neon](https://neon.tech).
+2. Copy the **connection string** (use the **pooled** string for serverless if Neon offers it).
+3. In [Vercel](https://vercel.com) → your project → **Settings → Environment Variables**, add **`DATABASE_URL`** with that string (all environments you use).
+4. In Neon → **SQL Editor**, paste and run `neon/schema.sql`.
+5. After deploy, verify:
+   - `GET /api/db-ping` — should return `{ ok: true, neon: { now, db } }`
+   - `GET /api/high-scores` — top scores (empty until you POST or insert rows)
+
+You can also use the **Vercel Neon integration** from the Vercel Marketplace to provision Neon and inject `DATABASE_URL` automatically.
 
 ## Deploy
 

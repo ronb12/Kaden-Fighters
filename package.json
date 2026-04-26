@@ -2,5 +2,11 @@
   "name": "kaden-fighter",
   "private": true,
   "version": "1.0.0",
-  "description": "Kaden Fighter — static HTML canvas game for Vercel"
+  "description": "Kaden Fighter — static HTML canvas game for Vercel",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4"
+  }
 }
