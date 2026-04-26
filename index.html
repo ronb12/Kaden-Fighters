@@ -32,10 +32,7 @@ const sheet = new Image();
 sheet.src = 'assets/character_sheet.png';
 
 const menuBg = new Image();
-menuBg.src = 'assets/menu-bg.svg';
-
-const reigenPoster = new Image();
-reigenPoster.src = 'assets/reigen-poster.png';
+menuBg.src = 'assets/menu-main.png';
 
 const stageStrip = new Image();
 stageStrip.src = 'assets/stages-strip.png';
@@ -426,34 +423,44 @@ function petals(x, y, color) {
 }
 
 // --- Menu / Select ----------------------------------------------------------
+function drawImageCover(img, dx, dy, dw, dh) {
+  if (!img || !img.complete || img.naturalWidth <= 0) return false;
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  const scale = Math.max(dw / iw, dh / ih);
+  const w = iw * scale;
+  const h = ih * scale;
+  const x = dx + (dw - w) / 2;
+  const y = dy + (dh - h) / 2;
+  ctx.drawImage(img, 0, 0, iw, ih, x, y, w, h);
+  return true;
+}
+
 function menu() {
   ctx.clearRect(0, 0, 1280, 720);
-  if (menuBg && menuBg.complete && menuBg.naturalWidth > 0) {
-    ctx.drawImage(menuBg, 0, 0, 1280, 720);
-    // Darken slightly so title text stays high-contrast
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  if (drawImageCover(menuBg, 0, 0, 1280, 720)) {
+    // Vignette: keep the art readable; stronger at bottom for UI text
+    const g = ctx.createRadialGradient(640, 360, 120, 640, 360, 780);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,0.45)');
+    ctx.fillStyle = g;
     ctx.fillRect(0, 0, 1280, 720);
-  }
-  drawText('KADEN FIGHTER', 640, 120, 74, '#d71920', 'center');
-  drawText('FIVE WARRIOR TOURNAMENT', 640, 170, 34, 'white', 'center');
-  drawText('武士道   戦士', 640, 265, 60, '#333', 'center');
-  // Boss tease
-  if (reigenPoster && reigenPoster.complete && reigenPoster.naturalWidth > 0) {
-    ctx.save();
-    ctx.globalAlpha = 0.92;
-    ctx.drawImage(reigenPoster, 900, 410, 360, 202); // small teaser
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.fillRect(900, 410, 360, 202);
-    drawText('FINAL BOSS: REIGEN', 1080, 448, 18, '#c084fc', 'center');
-    drawText('Defeat him to win the tournament', 1080, 472, 14, '#aaa', 'center');
-    ctx.restore();
+    const g2 = ctx.createLinearGradient(0, 520, 0, 720);
+    g2.addColorStop(0, 'rgba(0,0,0,0)');
+    g2.addColorStop(1, 'rgba(0,0,0,0.65)');
+    ctx.fillStyle = g2;
+    ctx.fillRect(0, 0, 1280, 720);
   } else {
-    drawText('FINAL BOSS: REIGEN', 640, 300, 22, '#c084fc', 'center');
+    ctx.fillStyle = '#050505';
+    ctx.fillRect(0, 0, 1280, 720);
+    drawText('KADEN FIGHTER', 640, 120, 74, '#d71920', 'center');
+    drawText('FIVE WARRIOR TOURNAMENT', 640, 170, 34, 'white', 'center');
   }
-  drawText('DIFFICULTY: ' + difficulty().name, 640, 330, 28, '#ffd65a', 'center');
-  drawText('Change with A/D or ◀/▶', 640, 360, 18, '#888', 'center');
-  drawText('PRESS ENTER', 640, 420, 40, '#ff3333', 'center');
-  drawText('New roster: Kaden, Raijin, Hikari, Ren, Yuki', 640, 480, 24, '#aaa', 'center');
+  // Art already includes title + menu look; only show flow hints
+  drawText('Beat 4 fighters, then face REIGEN', 640, 600, 18, 'rgba(200,180,255,0.9)', 'center');
+  drawText('DIFFICULTY: ' + difficulty().name + '  ·  change: A/D or ◀/▶', 640, 632, 20, '#ffd65a', 'center');
+  drawText('PRESS ENTER — tournament roster (5 fighters)', 640, 662, 20, 'rgba(255,255,255,0.9)', 'center');
+  drawText('START', 640, 698, 28, '#ff3333', 'center');
 }
 
 function characterSelect() {
