@@ -1,0 +1,6 @@
+{
+  "name": "kaden-fighter",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Kaden Fighter — static HTML canvas game for Vercel"
+}
