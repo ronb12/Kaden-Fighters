@@ -37,6 +37,9 @@ menuBg.src = 'assets/menu-main.png';
 const stageStrip = new Image();
 stageStrip.src = 'assets/stages-strip.png';
 
+const gameOverBg = new Image();
+gameOverBg.src = 'assets/game-over.png';
+
 // --- Character roster -------------------------------------------------------
 const characters = [
   {name:'KADEN',  jp:'火伝', color:'#e23a2e', style:'All-Rounder',     special:'Raging Palm',   super:'Kaden Fury',       row:0,
@@ -1428,16 +1431,32 @@ function nextRoundOrMatch() {
 
 function endScreen(win) {
   ctx.clearRect(0, 0, 1280, 720);
+
+  if (!win && gameOverBg && gameOverBg.complete && gameOverBg.naturalWidth > 0) {
+    drawImageCover(gameOverBg, 0, 0, 1280, 720);
+    const g = ctx.createLinearGradient(0, 0, 0, 720);
+    g.addColorStop(0, 'rgba(0,0,0,0.1)');
+    g.addColorStop(1, 'rgba(0,0,0,0.45)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 1280, 720);
+
+    const speaker = Number.isFinite(endTauntSpeaker) ? endTauntSpeaker : lastOpponentChar;
+    const accent = characters[speaker]?.color || '#a855f7';
+    const line = endTaunt || pickTaunt(speaker, false);
+    drawSpeechBubble(70, 520, 520, 110, line, accent);
+
+    drawText('PRESS ENTER — MAIN MENU', 640, 698, 24, 'rgba(255,230,255,0.95)', 'center');
+    return;
+  }
+
   drawText(win ? 'TOURNAMENT CHAMPION' : 'GAME OVER', 640, 230, 70, win ? '#ffd65a' : '#e33', 'center');
   drawText(win ? characters[p1.char].name + ' rules the Shadow Dojo' : 'Train and fight again',
            640, 310, 34, 'white', 'center');
 
-  // Speaker portrait + trash talk
   const speaker = Number.isFinite(endTauntSpeaker) ? endTauntSpeaker : lastOpponentChar;
   const accent = characters[speaker]?.color || '#7d0e0e';
   const py = rowY[speaker];
   const ph = rowH[speaker];
-  // Portrait uses the same slice as character select "full" panel
   ctx.save();
   ctx.globalAlpha = 0.95;
   ctx.strokeStyle = 'rgba(255,255,255,0.22)';
