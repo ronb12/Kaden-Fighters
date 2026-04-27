@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Kaden Fighter v2 — Five Warrior Tournament</title>
+<title>Kaden Fighters: Rise of Reigen</title>
 <meta name="theme-color" content="#7d0e0e"/>
+<meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <link rel="manifest" href="/site.webmanifest"/>
@@ -12,1487 +13,170 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"/>
 <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png"/>
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"/>
-<style>
-*{box-sizing:border-box}
-body{margin:0;background:#050505;color:white;font-family:Arial Black,Impact,sans-serif;overflow:hidden}
-#wrap{width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle,#151515,#000)}
-canvas{background:#050505;border:3px solid #7d0e0e;box-shadow:0 0 35px #550000;image-rendering:pixelated;max-width:100vw;max-height:100vh}
-.hint{position:fixed;bottom:8px;left:0;right:0;text-align:center;color:#aaa;font:14px Arial}
-</style>
+<link rel="stylesheet" href="css/kfr-app.css"/>
 </head>
 <body>
-<div id="wrap"><canvas id="game" width="1280" height="720"></canvas></div>
-<div class="hint">Menu/Select: ENTER · Move: A/D · Jump: W · Block: S · Punches: J/U/I/O/P · Kicks: K/H/Y/L/N · Special: SPACE · Super: SHIFT</div>
-<script>
-const cvs = document.getElementById('game');
-const ctx = cvs.getContext('2d');
-ctx.imageSmoothingEnabled = false;
-
-const sheet = new Image();
-sheet.src = 'assets/character_sheet.png';
-
-const menuBg = new Image();
-menuBg.src = 'assets/menu-main.png';
-
-const stageStrip = new Image();
-stageStrip.src = 'assets/stages-strip.png';
-
-const gameOverBg = new Image();
-gameOverBg.src = 'assets/game-over.png';
-
-// --- Character roster -------------------------------------------------------
-const characters = [
-  {name:'KADEN',  jp:'火伝', color:'#e23a2e', style:'All-Rounder',     special:'Raging Palm',   super:'Kaden Fury',       row:0,
-    specialDesc:'Armored palm wave — eats one hit'},
-  {name:'RAIJIN', jp:'雷神', color:'#3aa7ff', style:'Speed/Rushdown',  special:'Thunder Dash',  super:'Storm Breaker',    row:1,
-    specialDesc:'Teleport behind opponent and strike'},
-  {name:'HIKARI', jp:'光',   color:'#ff4f91', style:'Agile/Hit & Run', special:'Sakura Step',   super:'Blossom Storm',    row:2,
-    specialDesc:'Air-dash with brief invincibility'},
-  {name:'REN',    jp:'蓮',   color:'#7ec46b', style:'Tricky/Counter',  special:'Lotus Guard',   super:'Lotus Ascension',  row:3,
-    specialDesc:'Parry the next hit and counter'},
-  {name:'YUKI',   jp:'雪',   color:'#69cfff', style:'Zoning/Control',  special:'Frost Slide',   super:'Absolute Zero',    row:4,
-    specialDesc:'Slow ice wave that lingers'},
-
-  // Final boss (not selectable)
-  {name:'REIGEN', jp:'永遠の影', color:'#a855f7', style:'FINAL BOSS', special:'Shadow Techniques', super:'Void Destruction', row:1,
-    specialDesc:'3-phase boss with regen + brutal punishes'}
-];
-const SELECTABLE_COUNT = 5;
-const BOSS_INDEX = 5;
-const rowY = [0, 200, 392, 572, 748];
-const rowH = [198, 190, 178, 174, 168];
-
-// --- Global state -----------------------------------------------------------
-let state = 'menu';
-let sel = 0, oppIndex = 1;
-let round = 1, p1wins = 0, p2wins = 0;
-let tournamentWins = 0;        // opponents defeated in tournament
-let score = 0;
-let msg = '';
-let hitPause = 0;              // freezes update loop while > 0
-let shake = 0;                 // screen-shake intensity
-const sparks = [];             // hit/effect particles
-let p1, p2;
-let projectiles = [];
-let lastOpponentChar = 1;
-let endTaunt = '';
-let endTauntSpeaker = 1;
-
-// --- Stages -----------------------------------------------------------------
-const stages = [
-  { name: 'DOTO OF DISCIPLINE', tint: 'rgba(0,0,0,0.20)' },
-  { name: 'STORMY MOUNTAIN PEAK', tint: 'rgba(0,0,0,0.18)' },
-  { name: 'BURNING VILLAGE', tint: 'rgba(0,0,0,0.14)' },
-  { name: 'SHADOW TEMPLE', tint: 'rgba(0,0,0,0.10)' },
-  { name: 'DRAGON FALLS', tint: 'rgba(0,0,0,0.16)' },
-];
-let stageIndex = 0;
-
-// --- Difficulty -------------------------------------------------------------
-const difficulties = [
-  { id: 'easy', name: 'EASY', aiScalar: 0.75, moveScalar: 0.85 },
-  { id: 'medium', name: 'MEDIUM', aiScalar: 1.0, moveScalar: 1.0 },
-  { id: 'hard', name: 'HARD', aiScalar: 1.25, moveScalar: 1.12 },
-];
-let difficultyIndex = 1;
-function difficulty() { return difficulties[difficultyIndex] || difficulties[1]; }
-function clamp01(x) { return Math.max(0, Math.min(1, x)); }
-
-function addScore(points) {
-  if (!Number.isFinite(points)) return;
-  score = Math.max(0, Math.round(score + points));
-}
-
-// --- Combo system (Street Fighter-style) ------------------------------------
-const COMBO_WINDOW_FRAMES = 45; // ~0.75s at 60fps
-
-function resetCombo(f) {
-  f.comboHits = 0;
-  f.comboTimer = 0;
-  f.comboPop = 0;
-}
-
-function registerComboHit(attacker) {
-  attacker.comboHits = (attacker.comboHits || 0) + 1;
-  attacker.comboTimer = COMBO_WINDOW_FRAMES;
-  attacker.comboPop = 14; // small pop animation frames
-}
-
-// --- Lightweight event queue (for multi-hit boss sequences) -----------------
-function schedule(f, delayFrames, fn) {
-  if (!f) return;
-  if (!f.events) f.events = [];
-  f.events.push({ t: Math.max(0, delayFrames | 0), fn });
-}
-
-function runEvents(f) {
-  if (!f || !f.events || f.events.length === 0) return;
-  for (let i = f.events.length - 1; i >= 0; i--) {
-    const e = f.events[i];
-    e.t--;
-    if (e.t <= 0) {
-      f.events.splice(i, 1);
-      try { e.fn(); } catch (_) {}
-    }
-  }
-}
-
-// --- Reigen boss move kit ---------------------------------------------------
-function bossHit(attacker, power, range, opts = {}) {
-  const other = (attacker === p1) ? p2 : p1;
-  if (!other) return false;
-  const dist = Math.abs(attacker.x - other.x);
-  if (dist >= range) return false;
-
-  // i-frames: whiff
-  if (other.iframes > 0) return false;
-
-  // Parry: punish attacker
-  if (other.parry > 0) {
-    other.parry = 0;
-    attacker.action = 'hurt';
-    attacker.lock = Math.max(attacker.lock, 36);
-    attacker.health -= Math.ceil(power * 0.8);
-    attacker.flash = 10;
-    hitPause = Math.max(hitPause, 8);
-    shake = Math.max(shake, 14);
-    spark(attacker.x, attacker.y - 120, '#ffeb70', 14);
-    resetCombo(attacker);
-    return true;
-  }
-
-  // Block
-  if (other.block) {
-    other.health -= Math.ceil(power * 0.2);
-    spark(other.x, other.y - 100, '#dddddd', 6);
-    resetCombo(attacker);
-    return true;
-  }
-
-  // Armor
-  if (other.armor > 0) {
-    other.armor--;
-    other.health -= Math.ceil(power * 0.45);
-    spark(other.x, other.y - 100, '#ffd65a', 6);
-    resetCombo(attacker);
-    return true;
-  }
-
-  // Clean hit
-  other.health -= power;
-  other.action = 'hurt';
-  other.lock = Math.max(other.lock, opts.stun ?? 14);
-  other.flash = Math.max(other.flash, 6);
-  const dir = Math.sign(other.x - attacker.x) || 1;
-  other.x = Math.max(80, Math.min(1200, other.x + dir * (opts.push ?? 14)));
-
-  registerComboHit(attacker);
-  hitPause = Math.max(hitPause, opts.pause ?? 4);
-  shake = Math.max(shake, opts.shake ?? 10);
-  spark(other.x, other.y - 110, opts.spark || '#a855f7', 10);
-  return true;
-}
-
-const REIGEN_MOVES = [
-  // 1) Basic attacks (1-4)
-  { id: 1,  name: 'Jab Punch',            kind: 'strike', phase: 1, minDist: 0,   maxDist: 120, lock: 16, exec: f => bossHit(f, 6, 110, { stun: 12 }) },
-  { id: 2,  name: 'Straight Punch',       kind: 'strike', phase: 1, minDist: 0,   maxDist: 140, lock: 18, exec: f => bossHit(f, 8, 135, { stun: 14, push: 16 }) },
-  { id: 3,  name: 'Hook Punch',           kind: 'strike', phase: 1, minDist: 0,   maxDist: 150, lock: 20, exec: f => bossHit(f, 9, 150, { stun: 14, push: 18 }) },
-  { id: 4,  name: 'Uppercut',             kind: 'strike', phase: 1, minDist: 0,   maxDist: 150, lock: 22, exec: f => bossHit(f, 11, 150, { stun: 16, push: 18, shake: 14 }) },
-
-  // 2) Kicks (5-10)
-  { id: 5,  name: 'Front Kick',           kind: 'strike', phase: 1, minDist: 40,  maxDist: 180, lock: 20, exec: f => bossHit(f, 9, 170, { stun: 14, push: 22 }) },
-  { id: 6,  name: 'Roundhouse Kick',      kind: 'strike', phase: 1, minDist: 60,  maxDist: 210, lock: 24, exec: f => bossHit(f, 12, 200, { stun: 18, push: 26, shake: 16 }) },
-  { id: 7,  name: 'Side Kick',            kind: 'strike', phase: 1, minDist: 60,  maxDist: 220, lock: 24, exec: f => bossHit(f, 10, 210, { stun: 16, push: 28 }) },
-  { id: 8,  name: 'Axe Kick',             kind: 'strike', phase: 1, minDist: 0,   maxDist: 170, lock: 28, exec: f => bossHit(f, 13, 170, { stun: 20, push: 18, shake: 18 }) },
-  { id: 9,  name: 'Jumping Kick',         kind: 'air',    phase: 1, minDist: 0,   maxDist: 200, lock: 22, exec: f => { f.vy = -12; return bossHit(f, 10, 190, { stun: 14 }); } },
-  { id: 10, name: 'Spin Kick',            kind: 'strike', phase: 1, minDist: 0,   maxDist: 230, lock: 28, exec: f => bossHit(f, 14, 220, { stun: 20, push: 26, shake: 18 }) },
-
-  // 3) Elbows & knees (11-15)
-  { id: 11, name: 'Elbow Strike',         kind: 'strike', phase: 1, minDist: 0,   maxDist: 110, lock: 18, exec: f => bossHit(f, 7, 105, { stun: 12 }) },
-  { id: 12, name: 'Jumping Elbow',        kind: 'air',    phase: 1, minDist: 0,   maxDist: 140, lock: 20, exec: f => { f.vy = -10; return bossHit(f, 8, 135, { stun: 14 }); } },
-  { id: 13, name: 'Knee Strike',          kind: 'strike', phase: 1, minDist: 0,   maxDist: 120, lock: 18, exec: f => bossHit(f, 8, 115, { stun: 14, push: 10 }) },
-  { id: 14, name: 'Jump Knee',            kind: 'air',    phase: 1, minDist: 0,   maxDist: 150, lock: 22, exec: f => { f.vy = -12; return bossHit(f, 9, 145, { stun: 16 }); } },
-  { id: 15, name: 'Flying Knee',          kind: 'dash',   phase: 2, minDist: 100, maxDist: 380, lock: 28, exec: f => { f.iframes = 10; f.x = Math.max(80, Math.min(1200, f.x + (f.flip ? -1 : 1) * 160)); return bossHit(f, 13, 220, { stun: 18, push: 26, shake: 16 }); } },
-
-  // 4) Combos (16-20)
-  { id: 16, name: '3 Hit Combo',          kind: 'combo',  phase: 1, minDist: 0,   maxDist: 150, lock: 34, exec: f => { bossHit(f, 5, 135, { stun: 10 }); schedule(f, 10, () => bossHit(f, 6, 145, { stun: 10 })); schedule(f, 20, () => bossHit(f, 7, 155, { stun: 12, shake: 12 })); return true; } },
-  { id: 17, name: '4 Hit Combo',          kind: 'combo',  phase: 2, minDist: 0,   maxDist: 170, lock: 40, exec: f => { bossHit(f, 5, 140, { stun: 10 }); schedule(f, 9, () => bossHit(f, 6, 150, { stun: 10 })); schedule(f, 18, () => bossHit(f, 7, 160, { stun: 12 })); schedule(f, 28, () => bossHit(f, 9, 175, { stun: 14, shake: 14 })); return true; } },
-  { id: 18, name: '5 Hit Combo',          kind: 'combo',  phase: 3, minDist: 0,   maxDist: 190, lock: 48, exec: f => { bossHit(f, 5, 140, { stun: 10 }); schedule(f, 8, () => bossHit(f, 6, 150, { stun: 10 })); schedule(f, 16, () => bossHit(f, 7, 160, { stun: 10 })); schedule(f, 24, () => bossHit(f, 8, 170, { stun: 12 })); schedule(f, 34, () => bossHit(f, 12, 190, { stun: 16, shake: 18 })); return true; } },
-  { id: 19, name: 'Body Combo',           kind: 'combo',  phase: 2, minDist: 0,   maxDist: 160, lock: 38, exec: f => { bossHit(f, 6, 140, { stun: 10 }); schedule(f, 10, () => bossHit(f, 6, 140, { stun: 10 })); schedule(f, 22, () => bossHit(f, 10, 165, { stun: 14, push: 20 })); return true; } },
-  { id: 20, name: 'Kick Combo',           kind: 'combo',  phase: 2, minDist: 40,  maxDist: 220, lock: 42, exec: f => { bossHit(f, 7, 180, { stun: 12 }); schedule(f, 12, () => bossHit(f, 9, 200, { stun: 14 })); schedule(f, 26, () => bossHit(f, 12, 220, { stun: 18, shake: 16 })); return true; } },
-
-  // 5) Special moves (21-25)
-  { id: 21, name: 'Shadow Dash',          kind: 'dash',   phase: 1, minDist: 160, maxDist: 520, lock: 22, exec: f => { f.iframes = 14; f.x = Math.max(80, Math.min(1200, f.x + (f.flip ? -1 : 1) * 240)); spark(f.x, f.y - 100, '#a855f7', 14); return true; } },
-  { id: 22, name: 'Dark Slash',           kind: 'strike', phase: 2, minDist: 0,   maxDist: 210, lock: 26, exec: f => bossHit(f, 14, 205, { stun: 18, shake: 16 }) },
-  { id: 23, name: 'Shadow Sweep',         kind: 'strike', phase: 2, minDist: 0,   maxDist: 220, lock: 26, exec: f => bossHit(f, 12, 210, { stun: 18, push: 26 }) },
-  { id: 24, name: 'Void Strike',          kind: 'strike', phase: 3, minDist: 0,   maxDist: 260, lock: 30, exec: f => bossHit(f, 18, 250, { stun: 22, push: 30, shake: 20 }) },
-  { id: 25, name: 'Dark Uppercut',        kind: 'strike', phase: 3, minDist: 0,   maxDist: 200, lock: 32, exec: f => bossHit(f, 19, 190, { stun: 24, shake: 22 }) },
-
-  // 6) Projectile moves (26-30)
-  { id: 26, name: 'Dark Fireball',        kind: 'proj',   phase: 1, minDist: 120, maxDist: 999, lock: 26, exec: f => { projectiles.push({ x: f.x + (f.flip ? -60 : 60), y: 430, vx: f.flip ? -10 : 10, owner: f, life: 70, color: '#a855f7', power: 10, size: 58, kind: 'shadow' }); return true; } },
-  { id: 27, name: 'Shadow Wave',          kind: 'proj',   phase: 2, minDist: 120, maxDist: 999, lock: 28, exec: f => { projectiles.push({ x: f.x + (f.flip ? -60 : 60), y: 480, vx: f.flip ? -7.5 : 7.5, owner: f, life: 120, color: '#a855f7', power: 8, size: 70, kind: 'shadow' }); return true; } },
-  { id: 28, name: 'Dark Spear',           kind: 'proj',   phase: 2, minDist: 120, maxDist: 999, lock: 30, exec: f => { projectiles.push({ x: f.x + (f.flip ? -60 : 60), y: 460, vx: f.flip ? -13 : 13, owner: f, life: 55, color: '#c084fc', power: 12, size: 42, kind: 'shadow' }); return true; } },
-  { id: 29, name: 'Void Blast',           kind: 'proj',   phase: 3, minDist: 120, maxDist: 999, lock: 34, exec: f => { projectiles.push({ x: f.x + (f.flip ? -60 : 60), y: 440, vx: f.flip ? -15 : 15, owner: f, life: 48, color: '#e9d5ff', power: 14, size: 50, kind: 'void' }); return true; } },
-  { id: 30, name: 'Shadow Barrage',       kind: 'proj',   phase: 3, minDist: 160, maxDist: 999, lock: 44, exec: f => { for (let i = 0; i < 5; i++) schedule(f, i * 6, () => projectiles.push({ x: f.x + (f.flip ? -60 : 60), y: 420 + i * 10, vx: f.flip ? -12 : 12, owner: f, life: 50, color: '#a855f7', power: 7, size: 46, kind: 'shadow' })); return true; } },
-
-  // 7) Power moves (31-35)
-  { id: 31, name: 'Shadow Eruption',      kind: 'power',  phase: 2, minDist: 0,   maxDist: 360, lock: 40, exec: f => { projectiles.push({ x: (f===p1?p2:p1).x, y: 520, vx: 0, owner: f, life: 30, color: '#a855f7', power: 16, size: 110, kind: 'void' }); return true; } },
-  { id: 32, name: 'Dark Explosion',       kind: 'power',  phase: 3, minDist: 0,   maxDist: 420, lock: 46, exec: f => { const other=(f===p1?p2:p1); if(!other) return false; projectiles.push({ x: other.x, y: 470, vx: 0, owner: f, life: 22, color: '#c084fc', power: 18, size: 130, kind: 'void' }); return true; } },
-  { id: 33, name: 'Gravity Crush',        kind: 'power',  phase: 3, minDist: 0,   maxDist: 320, lock: 44, exec: f => bossHit(f, 20, 300, { stun: 26, push: 0, shake: 24 }) },
-  { id: 34, name: 'Shadow Impact',        kind: 'strike', phase: 2, minDist: 0,   maxDist: 260, lock: 34, exec: f => bossHit(f, 16, 250, { stun: 22, push: 30, shake: 20 }) },
-  { id: 35, name: 'Void Breaker',         kind: 'strike', phase: 3, minDist: 0,   maxDist: 280, lock: 38, exec: f => bossHit(f, 22, 270, { stun: 28, push: 34, shake: 26 }) },
-
-  // 8) Air moves (36-40)
-  { id: 36, name: 'Air Punch',            kind: 'air',    phase: 1, minDist: 0,   maxDist: 160, lock: 22, exec: f => { f.vy = -13; return bossHit(f, 8, 150, { stun: 12 }); } },
-  { id: 37, name: 'Air Kick',             kind: 'air',    phase: 1, minDist: 0,   maxDist: 180, lock: 22, exec: f => { f.vy = -13; return bossHit(f, 9, 170, { stun: 14 }); } },
-  { id: 38, name: 'Air Spin Kick',        kind: 'air',    phase: 2, minDist: 0,   maxDist: 220, lock: 28, exec: f => { f.vy = -14; return bossHit(f, 13, 210, { stun: 18, shake: 16 }); } },
-  { id: 39, name: 'Air Dash',             kind: 'air',    phase: 2, minDist: 160, maxDist: 520, lock: 24, exec: f => { f.iframes = 12; f.vy = -10; f.x = Math.max(80, Math.min(1200, f.x + (f.flip ? -1 : 1) * 260)); spark(f.x, f.y - 110, '#a855f7', 12); return true; } },
-  { id: 40, name: 'Diving Attack',        kind: 'air',    phase: 3, minDist: 120, maxDist: 420, lock: 32, exec: f => { f.vy = -16; schedule(f, 10, () => bossHit(f, 16, 240, { stun: 22, shake: 20 })); return true; } },
-
-  // 9) Counter & defensive (41-45)
-  { id: 41, name: 'Shadow Counter',       kind: 'def',    phase: 2, minDist: 0,   maxDist: 200, lock: 24, exec: f => { f.parry = 14; spark(f.x, f.y - 100, '#7c3aed', 8); return true; } },
-  { id: 42, name: 'Void Parry',           kind: 'def',    phase: 3, minDist: 0,   maxDist: 200, lock: 28, exec: f => { f.parry = 22; spark(f.x, f.y - 110, '#e9d5ff', 10); return true; } },
-  { id: 43, name: 'Shadow Dodge',         kind: 'def',    phase: 2, minDist: 0,   maxDist: 999, lock: 16, exec: f => { f.iframes = 18; spark(f.x, f.y - 110, '#a855f7', 10); return true; } },
-  { id: 44, name: 'Dark Guard',           kind: 'def',    phase: 1, minDist: 0,   maxDist: 999, lock: 18, exec: f => { f.block = true; f.blockTimer = 18; return true; } },
-  { id: 45, name: 'Teleport Counter',     kind: 'def',    phase: 3, minDist: 0,   maxDist: 999, lock: 28, exec: f => { const other=(f===p1?p2:p1); if(!other) return false; f.iframes = 16; f.x = Math.max(80, Math.min(1200, other.x + ((other.x > 640) ? -110 : 110))); f.flip = f.x > other.x; spark(f.x, f.y - 105, '#a855f7', 16); schedule(f, 10, () => bossHit(f, 14, 190, { stun: 18 })); return true; } },
-
-  // 10) Ultimate moves (46-50)
-  { id: 46, name: 'Eternal Darkness',     kind: 'ult',    phase: 3, minDist: 0,   maxDist: 999, lock: 52, exec: f => { shake = Math.max(shake, 24); hitPause = Math.max(hitPause, 8); for (let i = 0; i < 8; i++) schedule(f, i * 7, () => projectiles.push({ x: f.x + (f.flip ? -60 : 60), y: 420 + (i%3)*20, vx: f.flip ? -11 : 11, owner: f, life: 60, color: '#a855f7', power: 7, size: 48, kind: 'shadow' })); return true; } },
-  { id: 47, name: 'Void Destruction',     kind: 'ult',    phase: 3, minDist: 0,   maxDist: 520, lock: 60, exec: f => { superMove(f); return true; } },
-  { id: 48, name: 'Shadow Domain',        kind: 'ult',    phase: 3, minDist: 0,   maxDist: 999, lock: 56, exec: f => { const other=(f===p1?p2:p1); if(!other) return false; projectiles.push({ x: other.x, y: 500, vx: 0, owner: f, life: 80, color: '#a855f7', power: 14, size: 160, kind: 'void' }); return true; } },
-  { id: 49, name: 'Oblivion Strike',      kind: 'ult',    phase: 3, minDist: 0,   maxDist: 320, lock: 50, exec: f => bossHit(f, 28, 300, { stun: 34, push: 40, shake: 30 }) },
-  { id: 50, name: 'Reigen Supreme',       kind: 'ult',    phase: 3, minDist: 0,   maxDist: 520, lock: 70, exec: f => { bossHit(f, 10, 200, { stun: 10 }); schedule(f, 10, () => bossHit(f, 12, 230, { stun: 12 })); schedule(f, 20, () => bossHit(f, 14, 260, { stun: 14 })); schedule(f, 34, () => bossHit(f, 24, 320, { stun: 30, shake: 28 })); return true; } },
-];
-
-function bossUseMove(f, moveId) {
-  const mv = REIGEN_MOVES.find(m => m.id === moveId);
-  if (!mv) return false;
-  if ((f.phase || 1) < mv.phase) return false;
-  f.action = 'special';
-  f.lock = Math.max(f.lock, mv.lock);
-  return !!mv.exec(f);
-}
-
-// --- Input ------------------------------------------------------------------
-const keys = {};
-addEventListener('keydown', e => {
-  keys[e.key.toLowerCase()] = true;
-  if (e.key === 'Enter') enter();
-  if (state === 'menu') {
-    if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') difficultyIndex = (difficultyIndex + 1) % difficulties.length;
-    if (e.key === 'ArrowLeft'  || e.key.toLowerCase() === 'a') difficultyIndex = (difficultyIndex + difficulties.length - 1) % difficulties.length;
-  }
-  if (state === 'select') {
-    if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') sel = (sel + 1) % SELECTABLE_COUNT;
-    if (e.key === 'ArrowLeft'  || e.key.toLowerCase() === 'a') sel = (sel + (SELECTABLE_COUNT - 1)) % SELECTABLE_COUNT;
-  }
-  e.preventDefault();
-});
-addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-
-function enter() {
-  if (state === 'menu') state = 'select';
-  else if (state === 'select') startTournament();
-  else if (state === 'roundover') nextRoundOrMatch();
-  else if (state === 'champion' || state === 'gameover') restartToMenu();
-}
-
-function restartToMenu() {
-  state = 'menu';
-  sel = 0;
-  oppIndex = 1;
-  round = 1;
-  p1wins = p2wins = tournamentWins = score = 0;
-  msg = '';
-  hitPause = shake = 0;
-  projectiles.length = 0;
-  sparks.length = 0;
-  p1 = p2 = null;
-  aiState.lastPlayerAction = 'idle';
-  aiState.whiffWindow = 0;
-  endTaunt = '';
-}
-
-function pickTaunt(speakerChar, playerWon) {
-  const name = characters[speakerChar]?.name || 'RIVAL';
-  const tauntsLose = {
-    0: ["Too slow. Train harder.", "You fought well… but not enough.", "Come back when your fists are real."],
-    1: ["Pathetic. You couldn't keep up.", "Lightning ends this!", "You blinked. You lost."],
-    2: ["Aww… did that hurt?", "You chased shadows and fell.", "Try again. I'll still be faster."],
-    3: ["Predictable. I read you like a scroll.", "You swung first. You paid for it.", "Your anger is easy to counter."],
-    4: ["Frozen in place. Like you belong.", "Cold lesson: don't rush in.", "You couldn't break my control."]
-  };
-  const tauntsWin = {
-    0: ["This isn't over. Next time, you fall.", "Lucky hit… don't get comfortable.", "You won today. Not tomorrow."],
-    1: ["Tch… I'll strike faster next time.", "Enjoy it. Thunder always returns.", "I won't miss again."],
-    2: ["Heh… cute. I slipped.", "Nice! But you won't catch me twice.", "Okay… that was clean. Don't get cocky."],
-    3: ["…Interesting. You adapted.", "I underestimated you. It won't happen again.", "A single mistake. That's all it took."],
-    4: ["Warmth fades. Winter comes back.", "I froze too late… next round you shatter.", "Control lost… for now."]
-  };
-  const pool = playerWon ? (tauntsWin[speakerChar] || tauntsWin[0]) : (tauntsLose[speakerChar] || tauntsLose[0]);
-  return pool[Math.floor(Math.random() * pool.length)].replace('{name}', name);
-}
-
-function drawSpeechBubble(x, y, w, h, text, accent = '#7d0e0e') {
-  ctx.save();
-  // Bubble
-  ctx.fillStyle = 'rgba(10,10,12,0.92)';
-  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-  ctx.lineWidth = 3;
-  roundRect(x, y, w, h, 18, true, true);
-
-  // Accent bar
-  ctx.fillStyle = accent;
-  ctx.globalAlpha = 0.75;
-  roundRect(x + 12, y + 12, 10, h - 24, 8, true, false);
-  ctx.globalAlpha = 1;
-
-  // Text
-  ctx.fillStyle = '#fff';
-  ctx.textAlign = 'left';
-  ctx.font = '26px Impact, Arial Black';
-  const lines = wrapText(text, 38);
-  const startY = y + 44;
-  for (let i = 0; i < Math.min(lines.length, 3); i++) {
-    ctx.fillText(lines[i], x + 34, startY + i * 30);
-  }
-  ctx.restore();
-}
-
-function roundRect(x, y, w, h, r, fill, stroke) {
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
-  if (fill) ctx.fill();
-  if (stroke) ctx.stroke();
-}
-
-function wrapText(str, maxChars) {
-  const words = String(str || '').split(/\s+/).filter(Boolean);
-  const lines = [];
-  let line = '';
-  for (const w of words) {
-    const next = line ? (line + ' ' + w) : w;
-    if (next.length > maxChars && line) { lines.push(line); line = w; }
-    else line = next;
-  }
-  if (line) lines.push(line);
-  return lines;
-}
-
-// --- Helpers ----------------------------------------------------------------
-function drawText(t, x, y, size = 36, color = 'white', align = 'left') {
-  ctx.fillStyle = color;
-  ctx.font = size + 'px Impact, Arial Black';
-  ctx.textAlign = align;
-  ctx.fillText(t, x, y);
-}
-
-function spark(x, y, color, n = 9) {
-  for (let i = 0; i < n; i++) {
-    sparks.push({
-      x, y,
-      vx: (Math.random() - 0.5) * 9,
-      vy: (Math.random() - 0.8) * 9,
-      life: 16 + Math.random() * 14,
-      maxLife: 26,
-      color,
-      size: 2 + Math.random() * 4,
-      gravity: 0.45
-    });
-  }
-}
-
-function petals(x, y, color) {
-  for (let i = 0; i < 6; i++) {
-    sparks.push({
-      x: x + (Math.random()-0.5)*60,
-      y: y + (Math.random()-0.5)*40,
-      vx: (Math.random()-0.5) * 2,
-      vy: -Math.random() * 1.5,
-      life: 40 + Math.random() * 20,
-      maxLife: 60,
-      color,
-      size: 5,
-      gravity: 0.05
-    });
-  }
-}
-
-// --- Menu / Select ----------------------------------------------------------
-function drawImageCover(img, dx, dy, dw, dh) {
-  if (!img || !img.complete || img.naturalWidth <= 0) return false;
-  const iw = img.naturalWidth;
-  const ih = img.naturalHeight;
-  const scale = Math.max(dw / iw, dh / ih);
-  const w = iw * scale;
-  const h = ih * scale;
-  const x = dx + (dw - w) / 2;
-  const y = dy + (dh - h) / 2;
-  ctx.drawImage(img, 0, 0, iw, ih, x, y, w, h);
-  return true;
-}
-
-function menu() {
-  ctx.clearRect(0, 0, 1280, 720);
-  if (drawImageCover(menuBg, 0, 0, 1280, 720)) {
-    // Vignette: keep the art readable; stronger at bottom for UI text
-    const g = ctx.createRadialGradient(640, 360, 120, 640, 360, 780);
-    g.addColorStop(0, 'rgba(0,0,0,0)');
-    g.addColorStop(1, 'rgba(0,0,0,0.45)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 1280, 720);
-    const g2 = ctx.createLinearGradient(0, 520, 0, 720);
-    g2.addColorStop(0, 'rgba(0,0,0,0)');
-    g2.addColorStop(1, 'rgba(0,0,0,0.65)');
-    ctx.fillStyle = g2;
-    ctx.fillRect(0, 0, 1280, 720);
-  } else {
-    ctx.fillStyle = '#050505';
-    ctx.fillRect(0, 0, 1280, 720);
-    drawText('KADEN FIGHTER', 640, 120, 74, '#d71920', 'center');
-    drawText('FIVE WARRIOR TOURNAMENT', 640, 170, 34, 'white', 'center');
-  }
-  // Art already includes title + menu look; only show flow hints
-  drawText('Beat 4 fighters, then face REIGEN', 640, 600, 18, 'rgba(200,180,255,0.9)', 'center');
-  drawText('DIFFICULTY: ' + difficulty().name + '  ·  change: A/D or ◀/▶', 640, 632, 20, '#ffd65a', 'center');
-  drawText('PRESS ENTER — tournament roster (5 fighters)', 640, 662, 20, 'rgba(255,255,255,0.9)', 'center');
-  drawText('START', 640, 698, 28, '#ff3333', 'center');
-}
-
-function characterSelect() {
-  ctx.clearRect(0, 0, 1280, 720);
-  drawText('CHARACTER SELECT', 640, 55, 50, 'white', 'center');
-  characters.slice(0, SELECTABLE_COUNT).forEach((c, i) => {
-    const x = 90 + i * 235;
-    ctx.strokeStyle = i === sel ? '#fff' : c.color;
-    ctx.lineWidth = i === sel ? 6 : 3;
-    ctx.strokeRect(x, 95, 195, 510);
-    ctx.drawImage(sheet, 0, rowY[i], 355, rowH[i], x + 8, 105, 179, 100);
-    ctx.drawImage(sheet, 246, rowY[i], 109, rowH[i], x + 35, 220, 120, 230);
-    drawText(c.name, x + 97, 480, 30, c.color, 'center');
-    drawText(c.style, x + 97, 502, 14, '#ddd', 'center');
-    // Special preview
-    drawText('SP: ' + c.special, x + 97, 530, 13, '#ffd65a', 'center');
-    // Wrap special description across two lines if needed
-    const desc = c.specialDesc;
-    drawText(desc, x + 97, 552, 11, '#bbb', 'center');
-    drawText('SU: ' + c.super, x + 97, 580, 13, '#ff8888', 'center');
-  });
-  drawText('A/D or arrows to choose · ENTER to start', 640, 660, 24, '#bbb', 'center');
-  drawText('Each fighter plays differently — read SP and SU before picking', 640, 690, 16, '#888', 'center');
-}
-
-// --- Fighter factory --------------------------------------------------------
-function makeFighter(charIdx, x, flip = false) {
-  const isBoss = charIdx === BOSS_INDEX;
-  return {
-    char: charIdx,
-    x, y: 510,
-    vx: 0, vy: 0,
-    flip,
-    health: isBoss ? 140 : 100,
-    meter: 0,
-    action: 'idle',
-    frame: 0,
-    lock: 0,
-    block: false,
-    cool: 0,
-    comboHits: 0,
-    comboTimer: 0,
-    comboPop: 0,
-    wins: 0,
-    flash: 0,        // white-flash duration when hit
-    armor: 0,        // hits absorbed during super-armor
-    iframes: 0,      // invulnerability frames
-    parry: 0,        // active parry window
-    airDashUsed: false,
-    phase: 1,
-    blockTimer: 0,   // AI: commit to block for N frames
-    actionCooldown: 0 // AI: don't re-pick decisions every frame
-  };
-}
-
-function startTournament() {
-  oppIndex = (sel + 1) % SELECTABLE_COUNT;
-  p1wins = 0; p2wins = 0;
-  round = 1;
-  tournamentWins = 0;
-  score = 0;
-  newRound();
-  state = 'fight';
-}
-
-function newRound() {
-  p1 = makeFighter(sel, 260, false);
-  p2 = makeFighter(oppIndex, 930, true);
-  resetCombo(p1);
-  resetCombo(p2);
-  projectiles = [];
-  sparks.length = 0;
-  hitPause = 0;
-  shake = 0;
-  // Stage pick: rotate with tournament progress, but force Shadow Temple for boss.
-  if (oppIndex === BOSS_INDEX) stageIndex = 3;
-  else stageIndex = Math.max(0, Math.min(stages.length - 1, tournamentWins % stages.length));
-  msg = 'ROUND ' + round;
-  setTimeout(() => msg = '', 900);
-}
-
-// --- Combat -----------------------------------------------------------------
-function attack(f, type, power, range) {
-  if (f.lock > 0) return;
-  f.action = type;
-  f.lock = 24;
-  f.frame = 0;
-  f.cool = 18;
-
-  const other = (f === p1) ? p2 : p1;
-  const dist = Math.abs(f.x - other.x);
-  if (dist >= range) {
-    resetCombo(f);
-    return;
-  }
-
-  // Defender i-frames: whiff entirely
-  if (other.iframes > 0) {
-    resetCombo(f);
-    spark(other.x, other.y - 110, '#ffffff', 4);
-    return;
-  }
-
-  // Defender parry: counter the attacker
-  if (other.parry > 0) {
-    other.parry = 0;
-    f.action = 'hurt';
-    f.lock = 36;
-    f.health -= 14;
-    f.flash = 12;
-    other.meter = Math.min(100, other.meter + 30);
-    other.action = 'special';
-    other.lock = 18;
-    hitPause = 10;
-    shake = 18;
-    spark(f.x, f.y - 120, '#ffeb70', 14);
-    msg = characters[other.char].name + ' COUNTERS!';
-    setTimeout(() => msg = '', 700);
-    resetCombo(f);
-    return;
-  }
-
-  if (other.block) {
-    resetCombo(f);
-    other.health -= Math.ceil(power * 0.25);
-    f.meter = Math.min(100, f.meter + 4);
-    shake = Math.max(shake, 4);
-    spark(other.x + (f.flip ? 40 : -40), other.y - 100, '#dddddd', 5);
-    return;
-  }
-
-  if (other.armor > 0) {
-    resetCombo(f);
-    // Soaks the hit: reduced damage, no stun, armor depletes
-    other.armor--;
-    other.health -= Math.ceil(power * 0.5);
-    f.meter = Math.min(100, f.meter + power * 0.6);
-    shake = Math.max(shake, 5);
-    spark(other.x, other.y - 100, '#ffd65a', 6);
-    return;
-  }
-
-  // Clean hit
-  const dir = Math.sign(other.x - f.x) || 1;
-  other.health -= power;
-  f.meter = Math.min(100, f.meter + power * 1.2);
-  registerComboHit(f);
-  // Score: base + combo bonus (player only)
-  if (f === p1) {
-    const comboBonus = f.comboHits >= 2 ? (f.comboHits - 1) * 15 : 0;
-    addScore(power * 10 + comboBonus);
-  }
-  other.action = 'hurt';
-  other.lock = 12;
-  other.x += dir * 18;
-  other.flash = 6;
-  hitPause = Math.min(8, 3 + Math.floor(power / 4));
-  shake = Math.min(16, 4 + Math.floor(power / 2));
-  spark(other.x + (f.flip ? -40 : 40), other.y - 100 - Math.random() * 40, characters[f.char].color);
-}
-
-// Per-character special moves
-function special(f) {
-  if (f.lock > 0 || f.meter < 25) return;
-  f.meter -= 25;
-  const c = f.char;
-  const other = (f === p1) ? p2 : p1;
-
-  if (c === 0) {
-    // KADEN — Raging Palm: armored projectile palm wave
-    f.action = 'special';
-    f.lock = 38;
-    f.armor = 1;
-    projectiles.push({
-      x: f.x + (f.flip ? -60 : 60), y: 430,
-      vx: f.flip ? -10 : 10,
-      owner: f, life: 70,
-      color: characters[c].color, power: 14, size: 55, kind: 'palm'
-    });
-  }
-  else if (c === 1) {
-    // RAIJIN — Thunder Dash: teleport behind and strike
-    f.action = 'special';
-    f.lock = 30;
-    const targetSide = (other.x > 640) ? -100 : 100; // wrap behind toward stage center side
-    f.x = Math.max(80, Math.min(1200, other.x + targetSide));
-    f.flip = f.x > other.x;
-    spark(f.x, f.y - 100, '#3aa7ff', 16);
-    if (other.iframes > 0 || other.parry > 0) {
-      // teleport still happens; treat the strike via attack so parries work
-    }
-    // Apply a strong hit using normal pipeline (lets parry/iframes interact)
-    const old = f.lock;
-    f.lock = 0;
-    attack(f, 'special-strike', 18, 180);
-    f.lock = Math.max(f.lock, 30);
-  }
-  else if (c === 2) {
-    // HIKARI — Sakura Step: fast i-frame air-dash, drops petals
-    f.action = 'special';
-    f.lock = 22;
-    f.iframes = 22;
-    const dir = f.flip ? -1 : 1;
-    f.x = Math.max(80, Math.min(1200, f.x + dir * 220));
-    f.flip = f.x > other.x;
-    f.vy = -10;
-    petals(f.x, 460, '#ff4f91');
-    petals(f.x - dir * 80, 480, '#ffb3d1');
-  }
-  else if (c === 3) {
-    // REN — Lotus Guard: open parry window
-    f.action = 'special';
-    f.lock = 30;
-    f.parry = 30;
-    spark(f.x, f.y - 110, '#7ec46b', 6);
-  }
-  else if (c === BOSS_INDEX) {
-    // REIGEN — Shadow Techniques: fast shadow bolt (stronger by phase)
-    f.action = 'special';
-    f.lock = 34;
-    const phaseMul = (f.phase || 1) === 3 ? 1.25 : (f.phase || 1) === 2 ? 1.12 : 1.0;
-    projectiles.push({
-      x: f.x + (f.flip ? -60 : 60), y: 430,
-      vx: f.flip ? -12 : 12,
-      owner: f, life: 55,
-      color: '#a855f7', power: Math.round(12 * phaseMul), size: 62, kind: 'shadow'
-    });
-  }
-  else {
-    // YUKI — Frost Slide: slow lingering ice projectile
-    f.action = 'special';
-    f.lock = 36;
-    projectiles.push({
-      x: f.x + (f.flip ? -60 : 60), y: 480,
-      vx: f.flip ? -4.5 : 4.5,
-      owner: f, life: 150,
-      color: characters[c].color, power: 8, size: 42, kind: 'frost'
-    });
-  }
-}
-
-function superMove(f) {
-  if (f.lock > 0 || f.meter < 100) return;
-  f.meter = 0;
-  f.action = 'super';
-  f.lock = 60;
-  const other = (f === p1) ? p2 : p1;
-  const dist = Math.abs(f.x - other.x);
-
-  // REIGEN boss super: huge shadow eruption (screen-control)
-  if (f.char === BOSS_INDEX) {
-    msg = 'VOID DESTRUCTION!';
-    setTimeout(() => msg = '', 900);
-    shake = Math.max(shake, 22);
-    hitPause = Math.max(hitPause, 10);
-    // Spawn a slow expanding wave projectile
-    projectiles.push({
-      x: f.x, y: 500,
-      vx: 0,
-      owner: f, life: 70,
-      color: '#a855f7', power: 22, size: 120, kind: 'void'
-    });
-    // Direct damage if close
-    if (dist < 360 && other.iframes <= 0 && !other.block) {
-      other.health -= 18;
-      other.action = 'hurt';
-      other.lock = 26;
-      other.flash = 14;
-    }
-    registerComboHit(f);
-    return;
-  }
-
-  if (dist < 520 && other.iframes <= 0) {
-    if (other.parry > 0) {
-      // Big parry punish
-      other.parry = 0;
-      resetCombo(f);
-      f.action = 'hurt'; f.lock = 60;
-      f.health -= 30;
-      f.flash = 18;
-      hitPause = 14; shake = 22;
-      spark(f.x, f.y - 120, '#ffeb70', 24);
-    } else if (other.block) {
-      resetCombo(f);
-      other.health -= 12;
-      shake = 12;
-    } else {
-      other.health -= 35;
-      other.action = 'hurt';
-      other.lock = 22;
-      other.flash = 14;
-      hitPause = 12;
-      shake = 22;
-      spark(other.x, other.y - 120, characters[f.char].color, 22);
-      if (f === p1) addScore(500);
-      registerComboHit(f);
-    }
-  } else {
-    resetCombo(f);
-  }
-  msg = characters[f.char].super.toUpperCase() + '!';
-  setTimeout(() => msg = '', 900);
-}
-
-// --- Player input -----------------------------------------------------------
-function controls() {
-  p1.vx = 0;
-  p1.block = false;
-  if (keys.a) p1.vx = -5;
-  if (keys.d) p1.vx = 5;
-  if (keys.w && p1.y >= 510) p1.vy = -16;
-  if (keys.s) p1.block = true;
-
-  const moves = {
-    j:['jab',5,95], u:['cross',7,105], i:['uppercut',9,100], o:['hook',10,110], p:['palm',12,125],
-    k:['front kick',7,135], h:['round kick',9,150], y:['jump kick',10,145], l:['low kick',6,130], n:['spin kick',13,165]
-  };
-  for (const k in moves) {
-    if (keys[k]) {
-      const m = moves[k];
-      attack(p1, m[0], m[1], m[2]);
-      keys[k] = false;
-    }
-  }
-  if (keys[' ']) { special(p1); keys[' '] = false; }
-  if (keys.shift) { superMove(p1); keys.shift = false; }
-
-  // No sliding sideways while committed to an attack or hitstun
-  if (p1.lock > 0) p1.vx = 0;
-}
-
-// --- AI ---------------------------------------------------------------------
-// Tracks short history of player action to react to whiffs.
-let aiState = { lastPlayerAction: 'idle', whiffWindow: 0 };
-
-function isPlayerAttacking() {
-  const a = p1.action;
-  return p1.lock > 0 && a !== 'idle' && a !== 'walk' && a !== 'hurt' && a !== 'block';
-}
-
-function ai() {
-  // Track whiff: player just finished an attack without landing
-  if (isPlayerAttacking()) {
-    aiState.lastPlayerAction = p1.action;
-    aiState.whiffWindow = 0;
-  } else if (aiState.lastPlayerAction !== 'idle' && p1.lock === 0) {
-    // Just exited an attack — opens punish window briefly
-    aiState.whiffWindow = 18;
-    aiState.lastPlayerAction = 'idle';
-  }
-  if (aiState.whiffWindow > 0) aiState.whiffWindow--;
-
-  p2.flip = p2.x > p1.x;
-  const d = p1.x - p2.x;
-  const ad = Math.abs(d);
-  const dir = Math.sign(d) || 1;
-  p2.vx = 0;
-  p2.block = false;
-
-  if (p2.lock > 0) return;
-
-  // Block commit: once AI decides to block, hold it for N frames
-  if (p2.blockTimer > 0) {
-    p2.block = true;
-    p2.blockTimer--;
-    return;
-  }
-
-  if (p2.actionCooldown > 0) {
-    p2.actionCooldown--;
-    // still allow movement during cooldown so AI doesn't freeze in place
-    const mv = difficulty().moveScalar;
-    if (ad > 165) p2.vx = dir * (3.5 * mv);
-    else if (ad < 95) p2.vx = -dir * (2 * mv);
-    return;
-  }
-
-  // Difficulty scales 0.30 (1st opp) → 0.85 (final boss) then adjusted by mode.
-  const base = Math.min(0.85, 0.30 + tournamentWins * 0.15);
-  const mode = difficulty();
-  let diff = Math.min(0.95, Math.max(0.18, base * mode.aiScalar));
-  let mv = mode.moveScalar;
-
-  // Boss tuning: always tougher, and ramps up by phase.
-  if (p2.char === BOSS_INDEX) {
-    const phaseMul = (p2.phase === 3) ? 1.45 : (p2.phase === 2) ? 1.25 : 1.1;
-    diff = Math.min(0.99, diff * phaseMul);
-    mv = mv * (p2.phase === 3 ? 1.18 : p2.phase === 2 ? 1.10 : 1.05);
-  }
-
-  // REIGEN special boss behavior: choose from a 50-move kit
-  if (p2.char === BOSS_INDEX) {
-    const other = p1;
-    const dist = Math.abs(p2.x - other.x);
-    const inRange = dist < 210;
-
-    // Phase 3: frequent ultimates / pressure
-    if (p2.phase === 3 && p2.meter >= 100 && Math.random() < diff * 0.08) {
-      bossUseMove(p2, 47); // Void Destruction (super)
-      p2.actionCooldown = 26;
-      return;
-    }
-
-    // Defensive reads
-    if (isPlayerAttacking() && dist < 210 && Math.random() < diff * 0.22) {
-      bossUseMove(p2, p2.phase >= 3 ? 42 : 41); // void parry / counter
-      p2.actionCooldown = 10;
-      return;
-    }
-
-    // Whiff punish
-    if (aiState.whiffWindow > 0 && dist < 260 && Math.random() < diff * 0.25) {
-      bossUseMove(p2, p2.phase >= 3 ? 24 : 22); // void strike / dark slash
-      p2.actionCooldown = 12;
-      return;
-    }
-
-    // Projectile zoning when far
-    if (dist > 260 && Math.random() < diff * 0.20) {
-      const projPool = p2.phase >= 3 ? [29, 30, 26] : (p2.phase === 2 ? [27, 28, 26] : [26]);
-      bossUseMove(p2, projPool[Math.floor(Math.random() * projPool.length)]);
-      p2.actionCooldown = 14;
-      return;
-    }
-
-    // Dash/teleport closes distance
-    if (dist > 320 && Math.random() < diff * 0.18) {
-      const mobility = p2.phase >= 3 ? [21, 39, 45] : (p2.phase === 2 ? [21, 39] : [21]);
-      bossUseMove(p2, mobility[Math.floor(Math.random() * mobility.length)]);
-      p2.actionCooldown = 10;
-      return;
-    }
-
-    // In-range: pick a strike or combo by phase
-    if (inRange && Math.random() < diff * 0.42) {
-      const pool =
-        p2.phase === 1 ? [1, 2, 3, 4, 5, 6, 11, 13, 16] :
-        p2.phase === 2 ? [6, 7, 8, 10, 15, 17, 19, 20, 22, 23, 34] :
-                         [18, 20, 24, 25, 31, 33, 35, 40, 49, 50];
-      bossUseMove(p2, pool[Math.floor(Math.random() * pool.length)]);
-      p2.actionCooldown = 8;
-      return;
-    }
-  }
-
-  // 1) Anti-air: player jumping in
-  if (p1.y < 470 && ad < 240 && Math.random() < diff * 0.18) {
-    if (p2.y >= 510) p2.vy = -13;
-    attack(p2, 'jump kick', 10, 200);
-    p2.actionCooldown = 6;
-    return;
-  }
-
-  // 2) Block when player is attacking close — commit so we don't reroll every frame
-  if (isPlayerAttacking() && ad < 180 && Math.random() < diff * 0.18) {
-    p2.block = true;
-    p2.blockTimer = 12 + Math.floor(diff * 10); // ~12-20 frames
-    return;
-  }
-
-  // 3) Punish whiff window — burst in with a heavy (one-shot)
-  if (aiState.whiffWindow > 0 && ad < 220 && Math.random() < diff * 0.12) {
-    if (ad > 140) p2.vx = dir * (4.5 * mv);
-    else { attack(p2, 'spin kick', 13, 165); aiState.whiffWindow = 0; }
-    p2.actionCooldown = 8;
-    return;
-  }
-
-  // 4) Spacing: keep around 130 px
-  if (ad > 165) {
-    p2.vx = dir * (3.5 * mv);
-  } else if (ad < 95) {
-    p2.vx = -dir * (2 * mv);
-  } else {
-    // 5) In-range: choose between super, special, normal
-    if (p2.meter >= 100 && Math.random() < diff * 0.025) {
-      superMove(p2);
-      p2.actionCooldown = 20;
-    } else if (p2.meter >= 25 && Math.random() < diff * 0.02) {
-      special(p2);
-      p2.actionCooldown = 14;
-    } else if (Math.random() < diff * 0.035) {
-      const moves = [
-        ['jab', 5, 95], ['cross', 7, 105], ['hook', 10, 110],
-        ['front kick', 7, 135], ['round kick', 9, 150], ['palm', 12, 125]
-      ];
-      const m = moves[Math.floor(Math.random() * moves.length)];
-      attack(p2, m[0], m[1], m[2]);
-      p2.actionCooldown = 6;
-    } else if (Math.random() < diff * 0.015) {
-      // Occasional pre-emptive block in case player swings
-      p2.block = true;
-      p2.blockTimer = 8;
-    }
-  }
-}
-
-// --- Physics ----------------------------------------------------------------
-function physics(f) {
-  f.x += f.vx;
-  f.y += f.vy;
-  f.vy += 0.8;
-  if (f.y > 510) { f.y = 510; f.vy = 0; f.airDashUsed = false; }
-  f.x = Math.max(80, Math.min(1200, f.x));
-
-  if (f.lock > 0) f.lock--;
-  else f.action = Math.abs(f.vx) > 0 ? 'walk' : 'idle';
-
-  f.frame = (f.frame + 0.18) % 8;
-
-  if (f.flash > 0) f.flash--;
-  if (f.iframes > 0) f.iframes--;
-  if (f.parry > 0) f.parry--;
-
-  // Combo window decay
-  if (f.comboTimer > 0) f.comboTimer--;
-  else if (f.comboHits > 0) resetCombo(f);
-  if (f.comboPop > 0) f.comboPop--;
-
-  runEvents(f);
-
-  // Auto-face the opponent when not committed to an action — fixes the
-  // "facing wrong way" glitch after Raijin teleports or after jumps.
-  const opp = (f === p1) ? p2 : p1;
-  if (opp && f.lock === 0) f.flip = f.x > opp.x;
-}
-
-// Keep the two fighters from overlapping. Called once per frame after physics.
-function separate() {
-  const minDist = 70;
-  const d = p2.x - p1.x;
-  const ad = Math.abs(d);
-  if (ad < minDist) {
-    const push = (minDist - ad) / 2;
-    const dir = Math.sign(d) || 1;
-    // Don't push during teleport/dash i-frames so those moves still feel snappy
-    if (p1.iframes <= 0 && p2.iframes <= 0) {
-      p1.x = Math.max(80, Math.min(1200, p1.x - dir * push));
-      p2.x = Math.max(80, Math.min(1200, p2.x + dir * push));
-    }
-  }
-}
-
-function update() {
-  if (state !== 'fight') return;
-  if (hitPause > 0) { hitPause--; return; }
-
-  controls();
-  ai();
-  physics(p1);
-  physics(p2);
-  separate();
-
-  // Boss phase + regen
-  if (p2 && p2.char === BOSS_INDEX) {
-    const hpPct = p2.health / 140;
-    p2.phase = hpPct > 0.70 ? 1 : (hpPct > 0.30 ? 2 : 3);
-    // light regen like an arcade boss
-    p2.health = Math.min(140, p2.health + (p2.phase === 3 ? 0.045 : 0.03));
-    // boss builds meter faster
-    p2.meter = Math.min(100, p2.meter + 0.08);
-  }
-
-  // Update projectiles
-  projectiles.forEach(pr => {
-    pr.x += pr.vx;
-    pr.life--;
-    const other = pr.owner === p1 ? p2 : p1;
-    const dist = Math.abs(pr.x - other.x);
-    const yOk = Math.abs(pr.y - other.y) < 130;
-    if (dist < 55 && yOk) {
-      if (other.iframes > 0) { /* whiff */ }
-      else if (other.parry > 0) {
-        // Reflect — turn it around
-        pr.vx = -pr.vx;
-        pr.owner = other;
-        pr.comboApplied = false;
-        other.parry = 0;
-        other.meter = Math.min(100, other.meter + 25);
-        spark(pr.x, pr.y, '#ffeb70', 10);
-      } else if (other.block) {
-        resetCombo(pr.owner);
-        other.health -= Math.ceil(pr.power * 0.25);
-        spark(pr.x, pr.y, '#dddddd', 6);
-        pr.life = 0;
-      } else {
-        other.health -= pr.power;
-        other.action = 'hurt';
-        other.lock = 14;
-        other.flash = 6;
-        if (!pr.comboApplied) {
-          registerComboHit(pr.owner);
-          pr.comboApplied = true;
-        }
-        if (pr.kind !== 'frost') pr.life = 0; // frost lingers and can multi-hit
-        else pr.life = Math.max(pr.life - 30, 0); // costs duration on hit
-        // Score: one award per projectile (player only)
-        if (pr.owner === p1) addScore(150);
-        hitPause = Math.max(hitPause, 4);
-        shake = Math.max(shake, 8);
-        spark(pr.x, pr.y, pr.color, 10);
-      }
-    }
-  });
-  projectiles = projectiles.filter(p => p.life > 0 && p.x > -100 && p.x < 1380);
-
-  // Update sparks
-  for (let i = sparks.length - 1; i >= 0; i--) {
-    const s = sparks[i];
-    s.x += s.vx; s.y += s.vy;
-    s.vy += s.gravity;
-    s.life--;
-    if (s.life <= 0) sparks.splice(i, 1);
-  }
-
-  // Decay shake
-  if (shake > 0) shake = Math.max(0, shake - 0.8);
-
-  // Round end (true double KO: both out of health same frame — draw goes to CPU)
-  if (p1.health <= 0 || p2.health <= 0) {
-    if (p1.health <= 0 && p2.health <= 0) {
-      state = 'roundover';
-      if (Math.random() < 0.5) {
-        p1wins++;
-        msg = 'DOUBLE KO — ' + characters[p1.char].name + ' WINS ROUND';
-      } else {
-        p2wins++;
-        msg = 'DOUBLE KO — ' + characters[p2.char].name + ' WINS ROUND';
-      }
-    } else if (p2.health <= 0) {
-      p1wins++;
-      state = 'roundover';
-      msg = characters[p1.char].name + ' WINS ROUND';
-      addScore(1000);
-    } else {
-      p2wins++;
-      state = 'roundover';
-      msg = characters[p2.char].name + ' WINS ROUND';
-    }
-  }
-}
-
-// --- Rendering --------------------------------------------------------------
-function drawStage() {
-  // Stage art (5-up strip). Falls back to the old minimalist stage if not loaded.
-  if (stageStrip && stageStrip.complete && stageStrip.naturalWidth > 0) {
-    const srcW = stageStrip.naturalWidth;
-    const srcH = stageStrip.naturalHeight;
-    const sliceH = Math.floor(srcH / 5);
-    const i = Math.max(0, Math.min(4, stageIndex | 0));
-    const sy = i * sliceH;
-
-    // Overscan draw to cover screen-shake translations
-    ctx.drawImage(stageStrip, 0, sy, srcW, sliceH, -120, -120, 1520, 960);
-
-    // Slight tint for readability / mood
-    ctx.fillStyle = stages[i]?.tint || 'rgba(0,0,0,0.18)';
-    ctx.fillRect(-120, -120, 1520, 960);
-
-    // Ground line
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.moveTo(0, 560); ctx.lineTo(1280, 560);
-    ctx.stroke();
-  } else {
-    ctx.fillStyle = '#020202';
-    // Overscan so screen-shake translations never expose old frame pixels.
-    ctx.fillRect(-120, -120, 1520, 960);
-    drawText('武',  180, 260, 150, '#171717', 'center');
-    drawText('士', 1080, 270, 150, '#171717', 'center');
-    drawText('道',  640, 390, 220, '#141414', 'center');
-    ctx.strokeStyle = '#202020';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(0, 560); ctx.lineTo(1280, 560);
-    ctx.stroke();
-  }
-}
-
-function drawBars() {
-  function bar(x, y, w, h, val, col, name, wins) {
-    ctx.strokeStyle = '#fff'; ctx.strokeRect(x, y, w, h);
-    ctx.fillStyle = '#333'; ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
-    ctx.fillStyle = val > 35 ? '#6ee14e' : '#e13a3a';
-    ctx.fillRect(x + 2, y + 2, (w - 4) * Math.max(0, val / 100), h - 4);
-    drawText(name, x, y - 10, 22, col);
-    drawText('Wins: ' + wins, x + w - 85, y - 10, 18, 'white');
-  }
-  bar(50, 45, 430, 28, p1.health, characters[p1.char].color, characters[p1.char].name, p1wins);
-  bar(800, 45, 430, 28, p2.health, characters[p2.char].color, characters[p2.char].name, p2wins);
-  drawText('ROUND ' + round + '  BEST OF 3', 640, 70, 30, 'white', 'center');
-  drawText('SCORE ' + Math.floor(score), 640, 105, 24, '#ffd65a', 'center');
-  drawText('Tournament: ' + Math.min(tournamentWins + 1, 4) + '/4', 640, 130, 18, '#aaa', 'center');
-  if (state === 'fight' && stages[stageIndex]) {
-    drawText(stages[stageIndex].name, 640, 160, 18, 'rgba(255,255,255,0.75)', 'center');
-  }
-  meter(50, 88, 300, p1.meter, characters[p1.char].color);
-  meter(930, 88, 300, p2.meter, characters[p2.char].color);
-
-  // Combo counter is drawn in-world HUD area (see drawCombos)
-}
-
-function drawCombos() {
-  if (!p1 || !p2) return;
-
-  function drawComboFor(attacker, defender) {
-    if (attacker.comboHits < 2 || attacker.comboTimer <= 0) return;
-    const isLeft = attacker === p1;
-
-    // Position near the defender (Street Fighter-style callout)
-    const x = Math.max(140, Math.min(1140, defender.x + (isLeft ? 120 : -120)));
-    const y = 250;
-
-    const pop = attacker.comboPop / 14;
-    const scale = 1 + pop * 0.18;
-    const alpha = Math.min(1, attacker.comboTimer / 10);
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.translate(x, y);
-    ctx.scale(scale, scale);
-
-    ctx.textAlign = 'center';
-    ctx.font = '44px Impact, Arial Black';
-
-    // Outline
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-    ctx.strokeText(attacker.comboHits + ' HIT', 0, 0);
-
-    // Fill
-    ctx.fillStyle = isLeft ? '#ffd65a' : '#ff8888';
-    ctx.fillText(attacker.comboHits + ' HIT', 0, 0);
-
-    ctx.font = '26px Impact, Arial Black';
-    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-    ctx.lineWidth = 5;
-    ctx.strokeText('COMBO', 0, 34);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('COMBO', 0, 34);
-
-    ctx.restore();
-  }
-
-  drawComboFor(p1, p2);
-  drawComboFor(p2, p1);
-}
-
-function meter(x, y, w, val, col) {
-  ctx.strokeStyle = '#888';
-  ctx.strokeRect(x, y, w, 14);
-  ctx.fillStyle = col;
-  ctx.fillRect(x + 2, y + 2, (w - 4) * val / 100, 10);
-  if (val >= 100) {
-    ctx.save();
-    ctx.fillStyle = '#fff';
-    ctx.font = '11px Impact';
-    ctx.textAlign = 'left';
-    ctx.fillText('SUPER READY', x + 4, y + 12);
-    ctx.restore();
-  }
-}
-
-function frameForAction(a) {
-  if (a === 'idle')        return [360, 0, 70];
-  if (a === 'walk')        return [460, 0, 70];
-  if (a === 'hurt')        return [520, 80, 90];
-  if (a === 'special' || a === 'special-strike') return [780, 90, 190];
-  if (a === 'super')       return [980, 90, 240];
-  if (a && a.includes && a.includes('kick')) return [1030, 0, 130];
-  return [620, 0, 120];
-}
-
-function drawFighter(f) {
-  const y = rowY[f.char];
-  const h = rowH[f.char];
-  const fr = frameForAction(f.action);
-  // Keep a stable source slice. Alternating adjacent columns can look like
-  // constant flicker depending on the sheet alignment / scaling.
-  const sx = fr[0];
-  const sy = y + fr[1];
-  const sw = fr[2];
-  const sh = Math.min(90, h - fr[1]);
-
-  ctx.save();
-  ctx.translate(f.x, f.y);
-  if (f.flip) ctx.scale(-1, 1);
-  const scale = 2.4;
-  // Boss tint/aura so REIGEN looks distinct even while reusing the sheet row.
-  if (f.char === BOSS_INDEX) {
-    ctx.filter = 'hue-rotate(265deg) saturate(1.8) brightness(1.08)';
-  }
-  ctx.drawImage(sheet, sx, sy, sw, sh, -sw * scale / 2, -sh * scale, sw * scale, sh * scale);
-  if (f.char === BOSS_INDEX) {
-    ctx.filter = 'none';
-    // Purple aura
-    ctx.globalAlpha = 0.22;
-    ctx.fillStyle = '#a855f7';
-    ctx.beginPath();
-    ctx.ellipse(0, -95, 64, 118, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-
-  // White flash on hit — redraw the sprite tinted bright white so only the
-  // sprite shape lights up, not the surrounding rectangle.
-  if (f.flash > 0) {
-    ctx.globalAlpha = Math.min(0.85, f.flash / 6);
-    ctx.filter = 'brightness(0) invert(1)'; // turn opaque pixels solid white
-    ctx.drawImage(sheet, sx, sy, sw, sh, -sw * scale / 2, -sh * scale, sw * scale, sh * scale);
-    ctx.filter = 'none';
-    ctx.globalAlpha = 1;
-  }
-  ctx.restore();
-
-  // Block shield
-  if (f.block) {
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(f.x, f.y - 115, 62, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  // Armor ring
-  if (f.armor > 0) {
-    ctx.strokeStyle = '#ffd65a';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.arc(f.x, f.y - 100, 70, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  // Parry ring
-  if (f.parry > 0) {
-    ctx.strokeStyle = '#7ec46b';
-    ctx.lineWidth = 3;
-    const r = 60 + Math.sin(f.parry * 0.8) * 6;
-    ctx.beginPath();
-    ctx.arc(f.x, f.y - 110, r, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  // i-frames trail
-  if (f.iframes > 0) {
-    ctx.fillStyle = 'rgba(255, 79, 145, 0.28)';
-    ctx.beginPath();
-    ctx.ellipse(f.x, f.y - 90, 50, 110, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
-function drawSparks() {
-  sparks.forEach(s => {
-    ctx.globalAlpha = Math.max(0, s.life / s.maxLife);
-    ctx.fillStyle = s.color;
-    ctx.fillRect(s.x - s.size / 2, s.y - s.size / 2, s.size, s.size);
-  });
-  ctx.globalAlpha = 1;
-}
-
-function drawProjectiles() {
-  projectiles.forEach(p => {
-    ctx.fillStyle = p.color;
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = (p.kind === 'frost' || p.kind === 'shadow' || p.kind === 'void') ? 30 : 20;
-    ctx.beginPath();
-    if (p.kind === 'frost') {
-      // jagged frost wave
-      ctx.ellipse(p.x, p.y, p.size, 22, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#cce8ff';
-      ctx.globalAlpha = 0.6;
-      ctx.beginPath();
-      ctx.ellipse(p.x, p.y, p.size * 0.6, 12, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    } else if (p.kind === 'void') {
-      // expanding void wave
-      const t = 1 - (p.life / 70);
-      const r = (p.size || 120) * (0.65 + t * 1.15);
-      ctx.globalAlpha = 0.35;
-      ctx.ellipse(p.x, p.y, r, 28 + t * 26, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = '#e9d5ff';
-      ctx.globalAlpha = 0.18;
-      ctx.beginPath();
-      ctx.ellipse(p.x, p.y, r * 0.55, 18, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    } else {
-      ctx.ellipse(p.x, p.y, p.size || 45, 18, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-  });
-}
-
-function drawFight() {
-  // Clear in screen space before any transforms to prevent ghosting/double-images.
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, 1280, 720);
-
-  // Apply screen shake to world but not HUD (sin/cos phase — random each frame reads as flicker)
-  ctx.save();
-  if (shake > 0.5) {
-    const phase = performance.now() * 0.045;
-    ctx.translate(Math.sin(phase) * shake * 0.42, Math.cos(phase * 1.63) * shake * 0.42);
-  }
-  drawStage();
-  drawProjectiles();
-  drawFighter(p1);
-  drawFighter(p2);
-  drawSparks();
-  if (msg) drawText(msg, 640, 205, 48, '#ff3333', 'center');
-  ctx.restore();
-
-  drawBars();
-  drawCombos();
-  drawText('SPACE: ' + characters[p1.char].special + ' (25)  ·  SHIFT: ' + characters[p1.char].super + ' (100)',
-           640, 690, 18, '#bbb', 'center');
-}
-
-function roundOver() {
-  drawFight();
-  drawText(msg, 640, 300, 52, '#fff', 'center');
-  drawText('PRESS ENTER', 640, 370, 34, '#ff3333', 'center');
-}
-
-function nextRoundOrMatch() {
-  if (p1wins >= 2) {
-    lastOpponentChar = p2.char;
-    // If we just beat the boss, we win the tournament.
-    if (lastOpponentChar === BOSS_INDEX) {
-      endTauntSpeaker = lastOpponentChar;
-      endTaunt = pickTaunt(endTauntSpeaker, true);
-      state = 'champion';
-      return;
-    }
-
-    tournamentWins++;
-    // After defeating 4 opponents, the final boss appears.
-    if (tournamentWins >= 4) {
-      oppIndex = BOSS_INDEX;
-    } else {
-      // Pick next opponent: skip self, wrap around among selectable roster
-      oppIndex = (oppIndex + 1) % SELECTABLE_COUNT;
-      if (oppIndex === sel) oppIndex = (oppIndex + 1) % SELECTABLE_COUNT;
-    }
-    p1wins = 0; p2wins = 0;
-    round = 1;
-    newRound();
-    state = 'fight';
-  } else if (p2wins >= 2) {
-    lastOpponentChar = p2.char;
-    endTauntSpeaker = lastOpponentChar;
-    endTaunt = pickTaunt(endTauntSpeaker, false);
-    state = 'gameover';
-  } else {
-    round++;
-    newRound();
-    state = 'fight';
-  }
-}
-
-function endScreen(win) {
-  ctx.clearRect(0, 0, 1280, 720);
-
-  if (!win && gameOverBg && gameOverBg.complete && gameOverBg.naturalWidth > 0) {
-    drawImageCover(gameOverBg, 0, 0, 1280, 720);
-    const g = ctx.createLinearGradient(0, 0, 0, 720);
-    g.addColorStop(0, 'rgba(0,0,0,0.1)');
-    g.addColorStop(1, 'rgba(0,0,0,0.45)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 1280, 720);
-
-    const speaker = Number.isFinite(endTauntSpeaker) ? endTauntSpeaker : lastOpponentChar;
-    const accent = characters[speaker]?.color || '#a855f7';
-    const line = endTaunt || pickTaunt(speaker, false);
-    drawSpeechBubble(70, 520, 520, 110, line, accent);
-
-    drawText('PRESS ENTER — MAIN MENU', 640, 698, 24, 'rgba(255,230,255,0.95)', 'center');
-    return;
-  }
-
-  drawText(win ? 'TOURNAMENT CHAMPION' : 'GAME OVER', 640, 230, 70, win ? '#ffd65a' : '#e33', 'center');
-  drawText(win ? characters[p1.char].name + ' rules the Shadow Dojo' : 'Train and fight again',
-           640, 310, 34, 'white', 'center');
-
-  const speaker = Number.isFinite(endTauntSpeaker) ? endTauntSpeaker : lastOpponentChar;
-  const accent = characters[speaker]?.color || '#7d0e0e';
-  const py = rowY[speaker];
-  const ph = rowH[speaker];
-  ctx.save();
-  ctx.globalAlpha = 0.95;
-  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-  ctx.lineWidth = 3;
-  roundRect(110, 360, 250, 290, 18, true, true);
-  ctx.globalAlpha = 1;
-  ctx.drawImage(sheet, 246, py, 109, ph, 145, 385, 180, 250);
-  ctx.restore();
-
-  const line = endTaunt || pickTaunt(speaker, win);
-  drawSpeechBubble(390, 390, 780, 150, line, accent);
-
-  drawText('PRESS ENTER TO RESTART', 640, 400, 28, '#ff3333', 'center');
-  drawText('Or refresh the page', 640, 440, 20, '#666', 'center');
-}
-
-// --- Main loop --------------------------------------------------------------
-let gameLoopStarted = false;
-function loop() {
-  update();
-  if (state === 'menu')         menu();
-  else if (state === 'select')  characterSelect();
-  else if (state === 'fight')   drawFight();
-  else if (state === 'roundover') roundOver();
-  else if (state === 'champion') endScreen(true);
-  else if (state === 'gameover') endScreen(false);
-  requestAnimationFrame(loop);
-}
-
-function startGameLoop() {
-  if (gameLoopStarted) return;
-  gameLoopStarted = true;
-  loop();
-}
-sheet.onload = startGameLoop;
-if (sheet.complete) startGameLoop();
-</script>
+<div id="wrap">
+  <div id="gameShell" role="application" aria-label="Kaden Fighters: Rise of Reigen">
+    <canvas id="game" width="1280" height="720" tabindex="0" title="Kaden Fighters: click or tap here if controls don’t respond"></canvas>
+    <div id="mobileControls">
+  <div class="mc-dpad" id="mcDpad">
+    <div class="mc-dpad-btn mc-left" data-key="arrowleft">&lt;</div>
+    <div class="mc-dpad-btn mc-right" data-key="arrowright">&gt;</div>
+    <div class="mc-dpad-btn mc-up" data-key="arrowup">^</div>
+    <div class="mc-dpad-btn mc-down" data-key="arrowdown">v</div>
+    <div class="mc-center"></div>
+  </div>
+  <div class="mc-actions">
+    <div class="mc-row">
+      <div class="mc-btn mc-special" data-key=" ">SP</div>
+      <div class="mc-btn mc-super" data-key="shift">SU</div>
+    </div>
+    <div class="mc-row">
+      <div class="mc-btn mc-punch" data-key="j">PUNCH</div>
+      <div class="mc-btn mc-kick" data-key="k">KICK</div>
+      <div class="mc-btn mc-enter" data-key="enter">ENTER</div>
+    </div>
+  </div>
+</div>
+<div class="main-menu" id="mainMenuHost" hidden aria-hidden="true" aria-label="Main menu">
+      <div class="mm-bg" aria-hidden="true">
+        <div class="mm-bg__art">
+          <img class="mm-bg__img" src="assets/main-menu-hero.png" alt="" decoding="async" fetchpriority="high" onerror="(function(m){m.onerror=function(){this.onerror=null;this.src='assets/menu-bg.svg'};m.src='assets/menu-main.png'})(this)"/>
+        </div>
+        <div class="mm-bg__base"></div>
+        <div class="mm-bg__side"></div>
+        <div class="mm-bg__sweep"></div>
+        <div class="mm-bg__torn"></div>
+        <div class="mm-bg__grid"></div>
+        <div class="mm-bg__vignette"></div>
+        <div class="mm-bg__noise"></div>
+      </div>
+      <div class="mm-fx" aria-hidden="true">
+        <div class="mm-bolt" aria-hidden="true"></div>
+        <div class="mm-fog1" aria-hidden="true"></div>
+        <div class="mm-fog2" aria-hidden="true"></div>
+      </div>
+      <div class="mm-arena" aria-hidden="true">
+        <div class="mm-arena__floor" aria-hidden="true"></div>
+        <div class="mm-arena__ring" aria-hidden="true"></div>
+        <div class="mm-arena__glow" aria-hidden="true"></div>
+        <div class="mm-arena__vs" aria-hidden="true">VS</div>
+      </div>
+      <div class="mm-frame" aria-hidden="true"></div>
+      <nav class="mm-list--center" aria-label="Menu modes">
+        <label class="mm-select__label" for="mmModeSelect">Choose a mode</label>
+        <div class="mm-select-wrap">
+        <select id="mmModeSelect" class="mm-select" aria-label="Game mode" autocomplete="off">
+          <option value="story" data-id="story">Story &middot; Follow the rise</option>
+          <option value="versus" data-id="versus">Versus &middot; Local 2-player</option>
+          <option value="tournament" data-id="tournament">Tournament &middot; Climb the bracket</option>
+          <option value="training" data-id="training">Training &middot; Move lab, dummy</option>
+          <option value="options" data-id="options">Options &middot; Difficulty &amp; more</option>
+          <option value="extras" data-id="extras">Extras &middot; Unlocks &amp; gallery</option>
+          <option value="store" data-id="store">Store &middot; Cosmetics (soon)</option>
+          <option value="exit" data-id="exit">Exit &middot; Close to title</option>
+        </select>
+        </div>
+      </nav>
+      <p class="mm-hint" aria-hidden="true">
+        <span><kbd>↑</kbd><kbd>↓</kbd> or list &middot; <kbd>Enter</kbd> to start &middot; <kbd>H</kbd> ranks &middot; <kbd>N</kbd> name</span>
+      </p>
+      <div class="mm-aux" aria-label="Header shortcuts">
+        <button type="button" data-id="leaderboard" title="Global scoreboard (H)">Ranks</button>
+        <button type="button" data-id="profile" title="Name for scoreboard (N)">Name</button>
+        <button type="button" data-id="fullscreen" title="Fullscreen (desktop)">Fullscreen</button>
+      </div>
+      <dialog class="mm-exit" id="mmExitDlg" role="alertdialog" aria-modal="true" aria-labelledby="mmExH" aria-describedby="mmExP">
+        <h2 class="mm-exit__h" id="mmExH">Exit to title</h2>
+        <p class="mm-exit__p" id="mmExP">Return to a fresh title screen? Tournament progress in this run will be reset (same as a full restart to menu).</p>
+        <div class="mm-exit__row">
+          <button type="button" class="mm-exit__cancel" autofocus>Cancel</button>
+          <button type="button" class="mm-exit__ok">Confirm</button>
+        </div>
+      </dialog>
+    </div>
+    <div class="lb-root" id="leaderboardHost" hidden aria-hidden="true" aria-label="Global scoreboard">
+      <div class="lb-bg" aria-hidden="true">
+        <div class="lb-bg__art">
+          <img class="lb-bg__art-img" src="assets/leaderboard-hero.png" alt="" decoding="async" onerror="this.onerror=null;this.src='assets/leaderboard-bg.png'"/>
+        </div>
+        <div class="lb-bg__base"></div>
+        <div class="lb-bg__glow"></div>
+        <div class="lb-bg__sweep"></div>
+        <div class="lb-bg__noise"></div>
+      </div>
+      <div class="lb-dim" aria-hidden="true"></div>
+      <div class="lb-title-wrap" id="lbTitleWrap">
+        <h2 class="lb-title">Kaden Fighters: Rise of Reigen</h2>
+        <p class="lb-sub">Global leaderboards &mdash; sort, search, or view details. Esc: menu</p>
+      </div>
+      <div id="lbLoad" role="status" aria-live="polite" style="display:none;position:absolute;left:50%;transform:translateX(-50%);top:10.5%;z-index:4;background:rgba(0,0,0,.55);padding:0.25em 0.5em;border-radius:6px;font:0.75em system-ui">Loading&hellip;</div>
+      <div id="lbErr" role="note" style="display:none;position:absolute;right:1%;top:10.5%;max-width:40%;z-index:4;padding:0.2em 0.4em;font:0.7rem system-ui">Server unavailable — local + sample.</div>
+      <div class="lb-toolbar" role="toolbar" aria-label="Controls">
+        <div id="lbTabs" class="btn-group" role="tablist" aria-label="View">
+          <button type="button" class="lb-tab" role="tab" data-tab="global" aria-pressed="true">Global</button>
+          <button type="button" class="lb-tab" role="tab" data-tab="friends" aria-pressed="false">Friends</button>
+          <button type="button" class="lb-tab" role="tab" data-tab="weekly" aria-pressed="false">Weekly</button>
+          <button type="button" class="lb-tab" role="tab" data-tab="alltime" aria-pressed="false">All-Time</button>
+        </div>
+        <input class="lb-srch" type="search" id="lbSearch" placeholder="Search name or fighter&hellip;" enterkeyhint="search" />
+        <button type="button" class="lb-refresh" id="lbRefresh" title="Reload (local + API)">&#x21bb; Refresh</button>
+        <button type="button" class="lb-back" id="lbBack" title="Main menu (Esc)">Back</button>
+      </div>
+      <div class="lb-mid" role="region" aria-label="Table">
+        <div id="lbTableWrap" role="region" aria-label="Leaderboard table">
+          <table id="lbTable" aria-rowcount="0" aria-label="Top players">
+            <thead>
+              <tr>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="rank" aria-pressed="true" title="Sort by rank / score">Rank</button></th>
+                <th><button type="button" class="lb-th-sort" data-sort="playerName" aria-pressed="false" id="thName">Player</button></th>
+                <th>Fighter</th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="wins" aria-pressed="false">Wins</button></th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="kos" aria-pressed="false">K.O.s</button></th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="winRate" aria-pressed="false">Win %</button></th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="bestCombo" aria-pressed="false" title="Sort by best combo">Best Cmb</button></th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="highScore" aria-pressed="false">High Score</button></th>
+              </tr>
+            </thead>
+            <tbody id="lbTbody"></tbody>
+          </table>
+        </div>
+        <div class="lb-y-wrap" id="lbYouPanel">
+          <div id="lbYou" aria-label="Your rank">
+            <div class="y-label"><strong>Your run</strong> (local) &middot; name: <span id="lbYName">KADEN</span></div>
+            <span>Rank</span><strong id="lbYRank">&mdash;</strong>
+            <span>Wins</span><strong id="lbYWins">0</strong>
+            <span>K.O.s</span><strong id="lbYKo">0</strong>
+            <span>Win %</span><strong id="lbYWr">0%</strong>
+            <span>High</span><strong id="lbYHi">0</strong>
+          </div>
+        </div>
+      </div>
+      <dialog class="lb-dlg" id="lbDetail" aria-labelledby="lpDetH" aria-modal="true">
+        <h3 id="lpDetH">Fighter details</h3>
+        <div class="lb-dlg__grid">
+          <div>Name</div><div id="dlName">&mdash;</div>
+          <div>Fighter</div><div id="dlFighter">&mdash;</div>
+          <div>Wins</div><div id="dlWins">0</div>
+          <div>Losses</div><div id="dlLosses">0</div>
+          <div>K.O.s</div><div id="dlKo">0</div>
+          <div>Win rate</div><div id="dlWrate">0%</div>
+          <div>Favorite</div><div id="dlFav">&mdash;</div>
+          <div>Best combo</div><div id="dlCombo">0</div>
+          <div>High score</div><div id="dlHi">0</div>
+        </div>
+        <div class="lb-dlg__bt">
+          <button type="button" id="lbDetClose" autofocus>Close</button>
+          <button type="button" id="dlOk">OK</button>
+        </div>
+      </dialog>
+    </div>
+  </div>
+</div>
+<script src="js/main-menu.js?v=9"></script>
+<script src="js/leaderboardData.js?v=9"></script>
+<script src="js/leaderboard-screen.js?v=9"></script>
+<script src="js/kfr-game.js?v=9"></script>
 </body>
 </html>
