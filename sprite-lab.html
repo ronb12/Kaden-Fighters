@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Kaden Fighters — Sprite Lab</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#07060a; color:#f3f4f6; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; display: grid; grid-template-columns: 340px 1fr; gap: 16px; }
+    @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+    .card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.10); border-radius: 12px; padding: 14px; }
+    h1 { font-size: 18px; margin: 0 0 10px; letter-spacing: 0.02em; }
+    h2 { font-size: 13px; margin: 14px 0 8px; color:#c7c9d1; text-transform: uppercase; letter-spacing: 0.12em; }
+    label { display:block; font-size: 12px; color:#c7c9d1; margin: 10px 0 6px; }
+    input[type="number"], input[type="text"], select {
+      width: 100%;
+      padding: 10px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(0,0,0,0.35);
+      color: #fff;
+      outline: none;
+    }
+    input[type="range"] { width: 100%; }
+    .row { display:flex; gap: 10px; align-items:center; }
+    .row > * { flex: 1; }
+    .btn {
+      display:inline-flex; align-items:center; justify-content:center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: linear-gradient(180deg, rgba(140,20,20,0.65), rgba(25,5,5,0.85));
+      color: #fff;
+      cursor: pointer;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .btn:active { transform: translateY(1px); }
+    .muted { color:#a8adb9; font-size: 12px; line-height: 1.4; }
+    .stage {
+      position: relative;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background: radial-gradient(circle at 50% 20%, rgba(120,40,200,0.13), transparent 55%),
+                  radial-gradient(circle at 75% 60%, rgba(200,60,30,0.10), transparent 55%),
+                  linear-gradient(180deg, rgba(2,0,10,0.65), rgba(0,0,0,0.95));
+      border-radius: 12px;
+      min-height: 520px;
+      overflow:hidden;
+    }
+    canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
+    .previewCanvas { width: min(100%, 860px); height: auto; aspect-ratio: 16/9; border: 1px solid rgba(255,255,255,0.10); border-radius: 12px; }
+    .toolbar { display:flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+    .pill { display:inline-flex; align-items:center; gap: 8px; padding: 8px 10px; border-radius: 999px; border:1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); font-size: 12px; color:#e5e7eb; }
+    .pill input { margin:0; }
+    .danger { background: linear-gradient(180deg, rgba(120,0,0,0.75), rgba(25,0,0,0.9)); }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; }
+  </style>
+  <meta name="robots" content="noindex" />
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <h1>Sprite Lab</h1>
+      <div class="muted">
+        Preview clips with keying + outline/rim, then export single-frame PNGs. <strong>Gameplay</strong> uses the same
+        <strong>ASTRA</strong> layout as Kaden: <code>1376×768</code>, <code>2×5</code> cells (see grid below). Ship sheets in
+        <code>assets/</code> as <code>astra_fighter_sheet.png</code> (Kaden) and <code>astra_raijin.png</code> … <code>astra_yuki.png</code>.
+        For <strong>full hand-painted parity</strong> with Kaden, paint all ten cells in your art tool, export a single
+        1376×768 PNG per fighter, then bump <code>ASTRA_ASSET_VER</code> in <code>js/kfr-game.js</code> + <code>index.html</code> and deploy; see the top of <code>scripts/generate_astra_rival_sheets.py</code> for the exact grid. To rebuild rivals from the legacy <code>*_anim.png</code> strips instead, run: <code>python3 scripts/generate_astra_rival_sheets.py</code> (overwrites the four rival ASTRA files). You can also load a local PNG below.
+      </div>
+
+      <h2>Source</h2>
+      <label>Image</label>
+      <select id="srcPreset">
+        <option value="assets/astra_fighter_sheet.png" data-preset="astra">ASTRA — Kaden (astra_fighter_sheet.png)</option>
+        <option value="assets/astra_raijin.png" data-preset="astra">ASTRA — Raijin (astra_raijin.png)</option>
+        <option value="assets/astra_hikari.png" data-preset="astra">ASTRA — Hikari (astra_hikari.png)</option>
+        <option value="assets/astra_ren.png" data-preset="astra">ASTRA — Ren (astra_ren.png)</option>
+        <option value="assets/astra_yuki.png" data-preset="astra">ASTRA — Yuki (astra_yuki.png)</option>
+        <option value="assets/character_sheet.png">assets/character_sheet.png</option>
+        <option value="assets/kaden_anim.png">assets/kaden_anim.png</option>
+        <option value="assets/raijin_anim.png">assets/raijin_anim.png</option>
+        <option value="assets/hikari_anim.png">assets/hikari_anim.png</option>
+        <option value="assets/ren_anim.png">assets/ren_anim.png</option>
+        <option value="assets/yuki_anim.png">assets/yuki_anim.png</option>
+      </select>
+      <label for="filePick" class="muted" style="display:block;margin-top:10px">Load local sheet (Raijin / Hikari ASTRA, etc. — avoids 404s for files not in <code>assets/</code> yet)</label>
+      <input type="file" id="filePick" accept="image/png,image/jpeg,image/webp" style="max-width:100%;margin-top:4px" />
+
+      <h2>ASTRA cell (match index.html)</h2>
+      <p class="muted" style="margin:0 0 8px">Row 0: idle, idle, walk0, walk1, jump — Row 1: jab, cross, kick, special, super</p>
+      <div class="row">
+        <div>
+          <label>col (0–4)</label>
+          <input id="astraCol" type="number" value="0" min="0" max="4" step="1" />
+        </div>
+        <div>
+          <label>row (0–1)</label>
+          <input id="astraRow" type="number" value="0" min="0" max="1" step="1" />
+        </div>
+      </div>
+      <div class="toolbar" style="margin-top:8px">
+        <button type="button" class="btn" id="btnApplyAstraCell" style="padding:8px 12px">Apply ASTRA cell to clip</button>
+      </div>
+
+      <h2>Clip</h2>
+      <div class="row">
+        <div>
+          <label>sx</label>
+          <input id="sx" type="number" value="364" min="0" step="1" />
+        </div>
+        <div>
+          <label>sy</label>
+          <input id="sy" type="number" value="22" min="0" step="1" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>sw</label>
+          <input id="sw" type="number" value="42" min="1" step="1" />
+        </div>
+        <div>
+          <label>sh</label>
+          <input id="sh" type="number" value="90" min="1" step="1" />
+        </div>
+      </div>
+      <label>Scale (preview)</label>
+      <input id="scale" type="range" min="1" max="10" value="6" />
+
+      <h2>Keying / style</h2>
+      <div class="toolbar">
+        <span class="pill"><input type="checkbox" id="doKey" checked /> Key background</span>
+        <span class="pill"><input type="checkbox" id="doOutline" checked /> Outline</span>
+        <span class="pill"><input type="checkbox" id="doRim" checked /> Rim</span>
+        <span class="pill"><input type="checkbox" id="doLift" /> Value lift</span>
+      </div>
+      <label>Key threshold (0–80)</label>
+      <input id="keyThresh" type="range" min="0" max="80" value="26" />
+      <label>Outline thickness (px)</label>
+      <input id="outlinePx" type="range" min="0" max="6" value="2" />
+      <label>Rim thickness (px)</label>
+      <input id="rimPx" type="range" min="0" max="10" value="3" />
+      <label>Rim color</label>
+      <input id="rimColor" type="text" value="#ffffff" />
+
+      <div class="toolbar">
+        <button class="btn" id="btnExport">Export PNG</button>
+        <button class="btn danger" id="btnReset">Reset</button>
+      </div>
+      <div class="muted" style="margin-top:10px">
+        Tip: try <code>walk</code> frames at sx 460 / 508 with sw 44, and see whether keying makes “cards”.
+      </div>
+    </section>
+
+    <section class="card stage">
+      <canvas id="preview" width="1280" height="720" class="previewCanvas"></canvas>
+    </section>
+  </div>
+
+  <script>
+    const preview = document.getElementById('preview');
+    const pctx = preview.getContext('2d');
+
+    const srcPreset = document.getElementById('srcPreset');
+    const sxEl = document.getElementById('sx');
+    const syEl = document.getElementById('sy');
+    const swEl = document.getElementById('sw');
+    const shEl = document.getElementById('sh');
+    const scaleEl = document.getElementById('scale');
+    const doKeyEl = document.getElementById('doKey');
+    const doOutlineEl = document.getElementById('doOutline');
+    const doRimEl = document.getElementById('doRim');
+    const doLiftEl = document.getElementById('doLift');
+    const keyThreshEl = document.getElementById('keyThresh');
+    const outlinePxEl = document.getElementById('outlinePx');
+    const rimPxEl = document.getElementById('rimPx');
+    const rimColorEl = document.getElementById('rimColor');
+    const btnExport = document.getElementById('btnExport');
+    const btnReset = document.getElementById('btnReset');
+    const astraColEl = document.getElementById('astraCol');
+    const astraRowEl = document.getElementById('astraRow');
+    const btnApplyAstraCell = document.getElementById('btnApplyAstraCell');
+    const filePick = document.getElementById('filePick');
+    let _lastBlobUrl = null;
+
+    /** Keep in sync with index.html (ASTRA + astraCell). */
+    const ASTRA = { w: 1376, h: 768, cellW: 275, cellH: 384, cols: 5, rows: 2 };
+    function astraCell(col, row) {
+      const c = Math.max(0, Math.min(ASTRA.cols - 1, col | 0));
+      const r = Math.max(0, Math.min(ASTRA.rows - 1, row | 0));
+      const sw = c === ASTRA.cols - 1 ? ASTRA.w - c * ASTRA.cellW : ASTRA.cellW;
+      const sh = ASTRA.cellH;
+      return { sx: c * ASTRA.cellW, sy: r * ASTRA.cellH, sw, sh };
+    }
+
+    function smoothingOff(ctx) {
+      ctx.imageSmoothingEnabled = false;
+      try { ctx.mozImageSmoothingEnabled = false; } catch (_) {}
+      try { ctx.webkitImageSmoothingEnabled = false; } catch (_) {}
+    }
+    smoothingOff(pctx);
+
+    const img = new Image();
+    img.decoding = 'async';
+
+    function keyToTransparent(pixels, thresh) {
+      for (let i = 0; i < pixels.length; i += 4) {
+        const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+        if (r < thresh && g < thresh && b < thresh) pixels[i + 3] = 0;
+      }
+    }
+
+    function makeSilhouette(src, color) {
+      const w = src.width|0, h = src.height|0;
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const cx = c.getContext('2d');
+      smoothingOff(cx);
+      cx.drawImage(src, 0, 0);
+      cx.globalCompositeOperation = 'source-in';
+      cx.fillStyle = color || 'rgba(0,0,0,1)';
+      cx.fillRect(0, 0, w, h);
+      return c;
+    }
+
+    function makeOutlineOnly(src, padPx) {
+      const p = Math.max(0, padPx|0);
+      if (!p) return null;
+      const w = src.width|0, h = src.height|0;
+      const sil = makeSilhouette(src, 'rgba(0,0,0,0.95)');
+      const out = document.createElement('canvas');
+      out.width = w + p*2;
+      out.height = h + p*2;
+      const ox = out.getContext('2d');
+      smoothingOff(ox);
+      for (let dy = -p; dy <= p; dy++) {
+        for (let dx = -p; dx <= p; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          if (Math.abs(dx) + Math.abs(dy) > p + 1) continue;
+          ox.drawImage(sil, p + dx, p + dy);
+        }
+      }
+      return out;
+    }
+
+    function makeRim(src, color, padPx) {
+      const p = Math.max(0, padPx|0);
+      if (!p) return null;
+      const w = src.width|0, h = src.height|0;
+      const sil = makeSilhouette(src, color || 'rgba(255,255,255,0.9)');
+      const out = document.createElement('canvas');
+      out.width = w + p*2;
+      out.height = h + p*2;
+      const ox = out.getContext('2d');
+      smoothingOff(ox);
+      for (let dy = -p; dy <= p; dy++) {
+        for (let dx = -p; dx <= p; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          if (dx*dx + dy*dy > (p+0.2)*(p+0.2)) continue;
+          ox.globalAlpha = 0.20;
+          ox.drawImage(sil, p + dx, p + dy);
+        }
+      }
+      ox.globalAlpha = 1;
+      return out;
+    }
+
+    function buildFrame() {
+      if (!img.complete || img.naturalWidth <= 0) return null;
+      const sx = Math.max(0, sxEl.value|0);
+      const sy = Math.max(0, syEl.value|0);
+      const sw = Math.max(1, swEl.value|0);
+      const sh = Math.max(1, shEl.value|0);
+      const c = document.createElement('canvas');
+      c.width = sw; c.height = sh;
+      const cx = c.getContext('2d', { willReadFrequently: true });
+      smoothingOff(cx);
+      cx.clearRect(0,0,sw,sh);
+      cx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      if (doKeyEl.checked) {
+        const id = cx.getImageData(0,0,sw,sh);
+        keyToTransparent(id.data, keyThreshEl.value|0);
+        cx.putImageData(id, 0, 0);
+      }
+      return c;
+    }
+
+    function draw() {
+      pctx.setTransform(1,0,0,1,0,0);
+      smoothingOff(pctx);
+      pctx.clearRect(0,0,preview.width,preview.height);
+      pctx.fillStyle = '#05030a';
+      pctx.fillRect(0,0,preview.width,preview.height);
+      pctx.globalAlpha = 1;
+
+      const frame = buildFrame();
+      if (!frame) return;
+
+      const scale = (scaleEl.value|0) || 1;
+      const dw = frame.width * scale;
+      const dh = frame.height * scale;
+      const x = ((preview.width - dw) / 2) | 0;
+      const y = ((preview.height - dh) / 2) | 0;
+
+      // ground shadow
+      pctx.save();
+      pctx.globalAlpha = 0.28;
+      pctx.fillStyle = '#000';
+      pctx.beginPath();
+      pctx.ellipse(preview.width/2, y + dh + 14, Math.max(18, dw*0.24), Math.max(6, dh*0.03), 0, 0, Math.PI*2);
+      pctx.fill();
+      pctx.restore();
+
+      if (doRimEl.checked) {
+        const rim = makeRim(frame, rimColorEl.value || '#fff', rimPxEl.value|0);
+        if (rim) {
+          pctx.save();
+          pctx.globalCompositeOperation = 'screen';
+          pctx.globalAlpha = 0.26;
+          pctx.drawImage(rim, x - (rimPxEl.value|0)*scale, y - (rimPxEl.value|0)*scale, dw + 2*(rimPxEl.value|0)*scale, dh + 2*(rimPxEl.value|0)*scale);
+          pctx.restore();
+        }
+      }
+      if (doOutlineEl.checked) {
+        const ol = makeOutlineOnly(frame, outlinePxEl.value|0);
+        if (ol) {
+          pctx.globalAlpha = 0.95;
+          pctx.drawImage(ol, x - (outlinePxEl.value|0)*scale, y - (outlinePxEl.value|0)*scale, dw + 2*(outlinePxEl.value|0)*scale, dh + 2*(outlinePxEl.value|0)*scale);
+          pctx.globalAlpha = 1;
+        }
+      }
+
+      pctx.drawImage(frame, x, y, dw, dh);
+
+      if (doLiftEl.checked) {
+        pctx.save();
+        pctx.globalCompositeOperation = 'screen';
+        pctx.globalAlpha = 0.07;
+        pctx.drawImage(frame, x, y, dw, dh);
+        pctx.restore();
+      }
+    }
+
+    /** Preset clips when sheet layout is known (2 rows × 5 cols). */
+    const PRESETS = {
+      // 1376×768, 2 rows × 5 columns (generated sheet); floor(1376/5)=275 per cell (+1px remainder on last col)
+      astra: { w: 1376, h: 768, cols: 5, rows: 2, cellW: 275, cellH: 384, firstSx: 0, firstSy: 0, label: '2×5 grid' }
+    };
+
+    function applySheetPreset() {
+      const opt = srcPreset.options[srcPreset.selectedIndex];
+      const key = opt && opt.getAttribute('data-preset');
+      if (!key || !PRESETS[key]) return;
+      const p = PRESETS[key];
+      // First frame: top-left cell
+      sxEl.value = p.firstSx;
+      syEl.value = p.firstSy;
+      swEl.value = p.cellW;
+      shEl.value = p.cellH;
+    }
+
+    function loadPreset() {
+      if (_lastBlobUrl) {
+        try { URL.revokeObjectURL(_lastBlobUrl); } catch (_) {}
+        _lastBlobUrl = null;
+      }
+      if (filePick) filePick.value = '';
+      applySheetPreset();
+      img.src = srcPreset.value;
+    }
+
+    function exportPng() {
+      const frame = buildFrame();
+      if (!frame) return;
+      const a = document.createElement('a');
+      const name = 'frame_' + (sxEl.value|0) + '_' + (syEl.value|0) + '_' + (swEl.value|0) + 'x' + (shEl.value|0) + '.png';
+      a.download = name;
+      a.href = frame.toDataURL('image/png');
+      a.click();
+    }
+
+    function resetDefaults() {
+      srcPreset.value = 'assets/character_sheet.png';
+      sxEl.value = 364; syEl.value = 22; swEl.value = 42; shEl.value = 90;
+      scaleEl.value = 6;
+      doKeyEl.checked = true;
+      doOutlineEl.checked = true;
+      doRimEl.checked = true;
+      doLiftEl.checked = false;
+      keyThreshEl.value = 26;
+      outlinePxEl.value = 2;
+      rimPxEl.value = 3;
+      rimColorEl.value = '#ffffff';
+      loadPreset();
+    }
+
+    for (const el of [srcPreset,sxEl,syEl,swEl,shEl,scaleEl,doKeyEl,doOutlineEl,doRimEl,doLiftEl,keyThreshEl,outlinePxEl,rimPxEl,rimColorEl]) {
+      el.addEventListener('input', draw);
+      el.addEventListener('change', draw);
+    }
+    btnExport.addEventListener('click', exportPng);
+    btnReset.addEventListener('click', resetDefaults);
+    if (filePick) {
+      filePick.addEventListener('change', () => {
+        const f = filePick.files && filePick.files[0];
+        if (!f) return;
+        if (_lastBlobUrl) {
+          try { URL.revokeObjectURL(_lastBlobUrl); } catch (_) {}
+          _lastBlobUrl = null;
+        }
+        _lastBlobUrl = URL.createObjectURL(f);
+        const opt = srcPreset.options[srcPreset.selectedIndex];
+        if (opt && opt.getAttribute('data-preset') === 'astra') applySheetPreset();
+        img.src = _lastBlobUrl;
+      });
+    }
+
+    if (btnApplyAstraCell) {
+      btnApplyAstraCell.addEventListener('click', () => {
+        const opt = srcPreset.options[srcPreset.selectedIndex];
+        if (!opt || opt.getAttribute('data-preset') !== 'astra') {
+          alert('Choose the ASTRA — Kaden source (or load a local ASTRA PNG), then set col/row.');
+          return;
+        }
+        const ac = astraCell(astraColEl.value | 0, astraRowEl.value | 0);
+        sxEl.value = ac.sx;
+        syEl.value = ac.sy;
+        swEl.value = ac.sw;
+        shEl.value = ac.sh;
+        draw();
+      });
+    }
+
+    img.onload = draw;
+    img.onerror = () => {
+      pctx.clearRect(0,0,preview.width,preview.height);
+      pctx.fillStyle = '#000';
+      pctx.fillRect(0,0,preview.width,preview.height);
+      pctx.fillStyle = '#fff';
+      pctx.font = '16px system-ui';
+      pctx.fillText('Could not load image: ' + img.src, 20, 40);
+    };
+    loadPreset();
+  </script>
+</body>
+</html>
+

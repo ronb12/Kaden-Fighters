@@ -2,15 +2,41 @@
 """
 Build ASTRA rival sheets (1376×768, 2×5) from the game’s own production anim strips.
 
-Kaden’s `assets/astra_fighter_sheet.png` is hand-authored at “hero” fidelity; the closest
-practical match for the other four is to use `assets/raijin_anim.png` (etc.)—the same
-lineage of pixel art that ships in `character_sheet.png` / anim strips—scaled into the
-Sprite Lab cell grid on a Kaden-matched neutral checker mat (for engine keying).
+Default pipeline (this script)
+--------------------------------
+Composites `assets/raijin_anim.png` … `yuki_anim.png` into the ASTRA grid. Running it
+**overwrites** the four `astra_*.png` rival sheets—skip it if you are shipping hand art.
 
-This does not replace a future hand-painted 10-pose ASTRA export, but it brings rivals up
-to the same *asset tier* as the rest of the cast instead of simple geometry.
+Hand export spec — true 10/10 parity with Kaden (`astra_fighter_sheet.png`)
+----------------------------------------------------------------------------
+1. **Canvas** — Exactly **1376×768** px, PNG, under `assets/`.
 
-Usage: python3 scripts/generate_astra_rival_sheets.py
+2. **Cell grid** (must match `getAstraFighterSheetClip` in `js/kfr-game.js`):
+   - **Row height** 384 px. Row 0: y=0..383. Row 1: y=384..767.
+   - **Column widths** — cols 0–3: **275** px (x = 0, 275, 550, 825). Col 4: **276** px
+     (x = 1100..1375) so 4×275 + 276 = 1376.
+
+3. **Pose slots** (paint one full-body pose per cell, on the mat):
+   - **Row 0:** idle, idle2, walk (phase 0), walk (phase 1), jump
+   - **Row 1:** jab, cross, kick, special, super (victory also uses this cell in code paths)
+
+4. **Mat / keying** — Like Kaden: **neutral light-gray checker** in empty areas, with
+   **low RGB spread** per tile (R,G within ~10–16 of each other) so
+   `isAstraCheckerMat` + flood keying clears the floor. Do not fill the *figure* with
+   the same “checker gray” you use for the mat, or the silhouette can key out.
+
+5. **Filenames to replace** (drop in, keep names exact):
+   - `assets/astra_fighter_sheet.png` — Kaden (roster index 0)
+   - `assets/astra_raijin.png` — Raijin (1)
+   - `assets/astra_hikari.png` — Hikari (2)
+   - `assets/astra_ren.png` — Ren (3)
+   - `assets/astra_yuki.png` — Yuki (4)
+
+6. **After** replacing files: bump `ASTRA_ASSET_VER` in `js/kfr-game.js` and the `?v=`
+   query on `kfr-game.js` + ASTRA `<link rel="preload">` rows in `index.html`, then
+   deploy. Use Sprite Lab / `sprite-lab.html` in this repo to preview the same layout.
+
+Usage (anim compositor; overwrites manual rival sheets): python3 scripts/generate_astra_rival_sheets.py
 """
 from __future__ import annotations
 
