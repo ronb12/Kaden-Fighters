@@ -14,6 +14,13 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png"/>
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"/>
 <link rel="stylesheet" href="css/kfr-app.css"/>
+<!-- Boot + fight move sheets (sync ?v= with ASTRA_ASSET_VER in js/kfr-game.js). crossorigin=anonymous must match Image.crossOrigin so preload reuses the same fetch. -->
+<link rel="preload" as="image" href="assets/reigen_classic_row.png?v=51" crossorigin="anonymous" fetchpriority="low"/>
+<link rel="preload" as="image" href="assets/kaden_taekwondo_sheet.png?v=51" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/raijin_taekwondo_sheet.png?v=51" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/hikari_wushu_sheet.png?v=51" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/ren_aikido_sheet.png?v=51" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/yuki_judo_sheet.png?v=51" crossorigin="anonymous" fetchpriority="high"/>
 </head>
 <body>
 <div id="wrap">
@@ -177,11 +184,6 @@
 <script src="js/main-menu.js?v=9"></script>
 <script src="js/leaderboardData.js?v=9"></script>
 <script src="js/leaderboard-screen.js?v=9"></script>
-<script src="js/kfr-game.js?v=14"></script>
-<link rel="preload" as="image" href="assets/astra_fighter_sheet.png?v=14" fetchpriority="low"/>
-<link rel="preload" as="image" href="assets/astra_raijin.png?v=14" fetchpriority="low"/>
-<link rel="preload" as="image" href="assets/astra_hikari.png?v=14" fetchpriority="low"/>
-<link rel="preload" as="image" href="assets/astra_ren.png?v=14" fetchpriority="low"/>
-<link rel="preload" as="image" href="assets/astra_yuki.png?v=14" fetchpriority="low"/>
+<script src="js/kfr-game.js?v=53"></script>
 </body>
 </html>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Leaderboards — Kaden Fighters: Rise of Reigen</title>
+<meta name="theme-color" content="#7d0e0e"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<link rel="manifest" href="/site.webmanifest"/>
+<link rel="icon" href="/favicon.ico" sizes="any"/>
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"/>
+<link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png"/>
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"/>
+<link rel="stylesheet" href="css/kfr-app.css"/>
+</head>
+<body>
+<div id="wrap">
+  <div id="gameShell" role="application" aria-label="Global leaderboards">
+    <canvas id="game" width="1280" height="720" tabindex="0" aria-hidden="true" style="visibility:hidden;pointer-events:none"></canvas>
+    <div class="lb-root" id="leaderboardHost" aria-label="Global scoreboard">
+      <div class="lb-bg" aria-hidden="true">
+        <div class="lb-bg__art">
+          <img class="lb-bg__art-img" src="assets/leaderboard-hero.png" alt="" decoding="async" onerror="this.onerror=null;this.src='assets/leaderboard-bg.png'"/>
+        </div>
+        <div class="lb-bg__base"></div>
+        <div class="lb-bg__glow"></div>
+        <div class="lb-bg__sweep"></div>
+        <div class="lb-bg__noise"></div>
+      </div>
+      <div class="lb-dim" aria-hidden="true"></div>
+      <div class="lb-title-wrap" id="lbTitleWrap">
+        <h2 class="lb-title">Kaden Fighters: Rise of Reigen</h2>
+        <p class="lb-sub">Global leaderboards &mdash; sort, search, or view details. Esc or Back returns to the game.</p>
+      </div>
+      <div id="lbLoad" role="status" aria-live="polite" style="display:none;position:absolute;left:50%;transform:translateX(-50%);top:10.5%;z-index:4;background:rgba(0,0,0,.55);padding:0.25em 0.5em;border-radius:6px;font:0.75em system-ui">Loading&hellip;</div>
+      <div id="lbErr" role="note" style="display:none;position:absolute;right:1%;top:10.5%;max-width:40%;z-index:4;padding:0.2em 0.4em;font:0.7rem system-ui">Server unavailable &mdash; local + sample.</div>
+      <div class="lb-toolbar" role="toolbar" aria-label="Controls">
+        <div id="lbTabs" class="btn-group" role="tablist" aria-label="View">
+          <button type="button" class="lb-tab" role="tab" data-tab="global" aria-pressed="true">Global</button>
+          <button type="button" class="lb-tab" role="tab" data-tab="friends" aria-pressed="false">Friends</button>
+          <button type="button" class="lb-tab" role="tab" data-tab="weekly" aria-pressed="false">Weekly</button>
+          <button type="button" class="lb-tab" role="tab" data-tab="alltime" aria-pressed="false">All-Time</button>
+        </div>
+        <input class="lb-srch" type="search" id="lbSearch" placeholder="Search name or fighter&hellip;" enterkeyhint="search" />
+        <button type="button" class="lb-refresh" id="lbRefresh" title="Reload (local + API)">&#x21bb; Refresh</button>
+        <button type="button" class="lb-back" id="lbBack" title="Back to the game">Back</button>
+      </div>
+      <div class="lb-mid" role="region" aria-label="Table">
+        <div id="lbTableWrap" role="region" aria-label="Leaderboard table">
+          <table id="lbTable" aria-rowcount="0" aria-label="Top players">
+            <thead>
+              <tr>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="rank" aria-pressed="true" title="Sort by rank / score">Rank</button></th>
+                <th><button type="button" class="lb-th-sort" data-sort="playerName" aria-pressed="false" id="thName">Player</button></th>
+                <th>Fighter</th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="wins" aria-pressed="false">Wins</button></th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="kos" aria-pressed="false">K.O.s</button></th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="winRate" aria-pressed="false">Win %</button></th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="bestCombo" aria-pressed="false" title="Sort by best combo">Best Cmb</button></th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="highScore" aria-pressed="false">High Score</button></th>
+              </tr>
+            </thead>
+            <tbody id="lbTbody"></tbody>
+          </table>
+        </div>
+        <div class="lb-y-wrap" id="lbYouPanel">
+          <div id="lbYou" aria-label="Your rank">
+            <div class="y-label"><strong>Your run</strong> (local) &middot; name: <span id="lbYName">KADEN</span></div>
+            <span>Rank</span><strong id="lbYRank">&mdash;</strong>
+            <span>Wins</span><strong id="lbYWins">0</strong>
+            <span>K.O.s</span><strong id="lbYKo">0</strong>
+            <span>Win %</span><strong id="lbYWr">0%</strong>
+            <span>High</span><strong id="lbYHi">0</strong>
+          </div>
+        </div>
+      </div>
+      <dialog class="lb-dlg" id="lbDetail" aria-labelledby="lpDetH" aria-modal="true">
+        <h3 id="lpDetH">Fighter details</h3>
+        <div class="lb-dlg__grid">
+          <div>Name</div><div id="dlName">&mdash;</div>
+          <div>Fighter</div><div id="dlFighter">&mdash;</div>
+          <div>Wins</div><div id="dlWins">0</div>
+          <div>Losses</div><div id="dlLosses">0</div>
+          <div>K.O.s</div><div id="dlKo">0</div>
+          <div>Win rate</div><div id="dlWrate">0%</div>
+          <div>Favorite</div><div id="dlFav">&mdash;</div>
+          <div>Best combo</div><div id="dlCombo">0</div>
+          <div>High score</div><div id="dlHi">0</div>
+        </div>
+        <div class="lb-dlg__bt">
+          <button type="button" id="lbDetClose" autofocus>Close</button>
+          <button type="button" id="dlOk">OK</button>
+        </div>
+      </dialog>
+    </div>
+  </div>
+</div>
+<script src="js/leaderboardData.js"></script>
+<script src="js/leaderboard-screen.js"></script>
+<script src="js/leaderboard-page.js"></script>
+</body>
+</html>

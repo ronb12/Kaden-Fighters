@@ -4,7 +4,8 @@ Build ASTRA rival sheets (1376×768, 2×5) from the game’s own production anim
 
 Default pipeline (this script)
 --------------------------------
-Composites `assets/raijin_anim.png` … `yuki_anim.png` into the ASTRA grid. Running it
+Composites `assets/raijin_anim.png` … `yuki_anim.png` into the ASTRA grid (place those
+strips in `assets/` yourself if you use this; they are not shipped in the default repo). Running it
 **overwrites** the four `astra_*.png` rival sheets—skip it if you are shipping hand art.
 
 Raijin from author PNGs: `python3 scripts/compose_raijin_user_astra.py` (`assets/raijin_concept/`).

@@ -21,6 +21,8 @@ KADEN = os.path.join(ROOT, "assets", "astra_fighter_sheet.png")
 OUT = os.path.join(ROOT, "assets", "astra_hikari.png")
 TURN = os.path.join(ROOT, "assets", "hikari_concept", "hikari_turnaround.png")
 FULL = os.path.join(ROOT, "assets", "hikari_concept", "hikari_full_sheet.png")
+# Full-body key art for roster cell (0,0) — same slot the game uses for bust/mini/portrait.
+HIKARI_GAMEPLAY = os.path.join(ROOT, "assets", "hikari-gameplay.png")
 
 
 def kaden_checker_pair():
@@ -85,7 +87,9 @@ def blit_in_cell(
     fw, fh = f.size
     if fw < 1 or fh < 1:
         return
-    scale = min((sw * 0.9) / fw, (sh * 0.92) / fh)
+    # Smaller in-cell fit than Kaden’s sheet: wide Wushu stances + roster cover+scaleMult
+    # need margin so full arms/legs survive the character-select portrait clip.
+    scale = min((sw * 0.78) / fw, (sh * 0.80) / fh)
     nw, nh = max(1, int(fw * scale)), max(1, int(fh * scale))
     f = f.resize((nw, nh), Image.Resampling.LANCZOS)
     f = f.convert("RGBA")
@@ -148,8 +152,13 @@ def main() -> int:
         for c in range(COLS):
             draw_checker(out, cell_x(c), y0, cell_w(c), CELL_H, ca, cb)
 
-    # Row0: idle, idle2, walk, walk, jump
-    blit_in_cell(out, 0, 0, turns[0])
+    # Row0: idle, idle2, walk, walk, jump — prefer HD key art for idle (0,0) when present
+    idle0 = (
+        Image.open(HIKARI_GAMEPLAY).convert("RGB")
+        if os.path.isfile(HIKARI_GAMEPLAY)
+        else turns[0]
+    )
+    blit_in_cell(out, 0, 0, idle0)
     blit_in_cell(out, 1, 0, turns[1] if len(turns) > 1 else turns[0])
     blit_in_cell(out, 2, 0, turns[2] if len(turns) > 2 else turns[0])
     blit_in_cell(out, 3, 0, turns[3] if len(turns) > 3 else turns[0])

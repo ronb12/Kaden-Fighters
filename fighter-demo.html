@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>Fighter engine demo</title>
+    <style>
+      :root {
+        --bar: rgba(20, 24, 32, 0.92);
+        --btn: #3d4a5c;
+        --btnact: #5a6d88;
+        --ink: #e8eaef;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #0e1117;
+        color: var(--ink);
+        font-family: system-ui, sans-serif;
+        padding: 8px 8px 120px;
+      }
+      @media (min-width: 600px) {
+        body {
+          padding-bottom: 8px;
+        }
+      }
+      h1 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0 0 8px;
+        opacity: 0.9;
+      }
+      .wrap {
+        position: relative;
+        max-width: 100%;
+      }
+      #fighter-canvas {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        border-radius: 6px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        touch-action: none;
+      }
+      .hint {
+        font-size: 0.8rem;
+        opacity: 0.75;
+        margin-top: 8px;
+        text-align: center;
+        max-width: 40rem;
+      }
+      .hint code {
+        background: #1a1f2a;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+      #fighter-touch {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 8px;
+        padding: 10px 10px max(10px, env(safe-area-inset-bottom));
+        background: var(--bar);
+        border-top: 1px solid #2a333f;
+        z-index: 2;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      @media (min-width: 600px) {
+        #fighter-touch {
+          display: none;
+        }
+        body {
+          padding-bottom: 8px;
+        }
+      }
+      .fc-dpad,
+      .fc-actions {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .fc-dpad {
+        flex-wrap: wrap;
+        max-width: 9rem;
+      }
+      .fc-btn {
+        min-width: 3rem;
+        min-height: 3rem;
+        border: none;
+        border-radius: 8px;
+        background: var(--btn);
+        color: var(--ink);
+        font-weight: 600;
+        font-size: 0.85rem;
+        touch-action: manipulation;
+        cursor: pointer;
+        box-shadow: 0 2px 0 #1e2530;
+      }
+      .fc-btn:active,
+      .fc-btn:focus {
+        background: var(--btnact);
+        outline: none;
+      }
+      .fc-wide {
+        min-width: 4.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>2D fighter — animation + combat</h1>
+    <div class="wrap">
+      <canvas id="fighter-canvas" width="960" height="480" aria-label="Fighter game"></canvas>
+    </div>
+    <p class="hint">
+      <code>Fighter</code> + <code>fighterConfig.js</code>: ship frames as <strong>128×128</strong> (or your size)
+      and set <code>sourceFrame</code> and <code>groundAnchorY</code> to match; the engine scales into a shared
+      world slot. Sheets: <code>?sheet=</code> (both), <code>?sheet1=</code> / <code>?sheet2=</code> per fighter.
+      Pixel art: <code>imageSmoothingEnabled = false</code>. <code>?debug=1</code> or <strong>D</strong>: hurt
+      (green / orange) + hit (magenta).
+    </p>
+    <div id="fighter-touch" aria-hidden="true">
+      <div class="fc-dpad">
+        <button type="button" class="fc-btn" data-fc="left" aria-label="Left">L</button>
+        <button type="button" class="fc-btn" data-fc="up" style="display: none" aria-label="Nudge">-</button>
+        <button type="button" class="fc-btn" data-fc="right" aria-label="Right">R</button>
+        <button type="button" class="fc-btn fc-wide" data-fc="block" aria-label="Block">B</button>
+      </div>
+      <div class="fc-actions">
+        <button type="button" class="fc-btn" data-fc="punch" aria-label="Punch (Z)">Z</button>
+        <button type="button" class="fc-btn" data-fc="kick" aria-label="Kick (X)">X</button>
+        <button type="button" class="fc-btn fc-wide" data-fc="jump" aria-label="Jump">Jmp</button>
+      </div>
+    </div>
+    <script type="module" src="js/fighter-engine/main.js?v=4"></script>
+  </body>
+</html>

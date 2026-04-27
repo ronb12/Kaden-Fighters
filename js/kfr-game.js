@@ -50,6 +50,9 @@ let gameDpr = 1;
 /** Scales one 60Hz “game tick” of movement / timers; set each frame in update() */
 let gameFrameScale = 1;
 const KADEN_DEBUG = typeof location !== 'undefined' && (location.search || '').indexOf('debug=1') >= 0;
+/** Set `?spriteDebug=1` to also log all render-mode changes (ASTRA / FTKW / legacy) during fights. */
+const KADEN_SPRITE_MODE_TRACE = typeof location !== 'undefined' && (location.search || '').indexOf('spriteDebug=1') >= 0;
+const _fighterSpriteModeLast = new WeakMap();
 /** false = old behavior (canvas stretches to fill shell; can look soft). true = exact N×1280×720 CSS px, centered (sharper pixels). */
 const USE_INTEGER_CANVAS_DISPLAY_SCALE = typeof location === 'undefined' || (String(location.search || '').indexOf('smooth=1') < 0);
 /** Integer sprite scale (1–4). All fighter blits: dest = source × this. */
@@ -140,16 +143,20 @@ var kadenMainMenu = null;
 /** @type {InstanceType<typeof LeaderboardScreen> | null} */
 var leaderboardScreen = null;
 
+/** Busts long-lived /assets/* immutable cache if sheet bytes change; keep in sync with index.html if preloaded. */
+const ASTRA_ASSET_VER = '51';
+
 const sheet = new Image();
-sheet.src = 'assets/character_sheet.png';
+try {
+  if (typeof location === 'undefined' || (location.protocol !== 'file:' && location.protocol !== 'blob:' && location.protocol !== 'chrome-extension:'))
+    sheet.crossOrigin = 'anonymous';
+} catch (_) { /* */ }
+/** Final-boss / legacy-clip row only (REIGEN + `getFighterSheetClip` UVs). Roster 0–4 use ASTRA + FTKW sheets. */
+sheet.src = `assets/reigen_classic_row.png?v=${ASTRA_ASSET_VER}`;
 /**
  * ASTRA / Sprite Lab sheets: 1376×768, 2×5 cells (see getAstraFighterSheetClip).
- * One optional PNG per roster index. Use a string path only when the file exists in `assets/`
- * (otherwise the site 404s). `null` = use classic `character_sheet.png` row for that fighter.
- * Example: `null, 'assets/astra_raijin.png', null, null, null` after you add the PNG.
- * Kaden: hand-tuned `astra_fighter_sheet.png`. Rivals: built from `assets/*_anim.png` strips composited
- * into the ASTRA grid (`scripts/generate_astra_rival_sheets.py`) — same production pixel art as the roster;
- * you can still replace with a hand-painted 10-cell Sprite Lab export later.
+ * One optional PNG per roster index. Rivals: see `scripts/generate_astra_rival_sheets.py` for a compositor
+ * from anim strips; hand-painted Sprite Lab exports are also supported.
  */
 function resolveAssetPath(rel) {
   if (!rel) return rel;
@@ -161,8 +168,38 @@ function resolveAssetPath(rel) {
   }
   return rel;
 }
-/** Busts long-lived /assets/* immutable cache if sheet bytes change; keep in sync with index.html if preloaded. */
-const ASTRA_ASSET_VER = '14';
+/**
+ * `ERR_NETWORK_CHANGED` and flaky Wi‑Fi can fail the first `Image` fetch; retry a few times with backoff.
+ * Does not log to console unless KADEN_DEBUG.
+ */
+function armImageWithNetworkRetry(img, relSrc, label, maxTries) {
+  if (!img) return;
+  try {
+    if (typeof location === 'undefined' || (location.protocol !== 'file:' && location.protocol !== 'blob:' && location.protocol !== 'chrome-extension:'))
+      img.crossOrigin = 'anonymous';
+  } catch (_) { /* */ }
+  const base = (relSrc && relSrc.length) ? relSrc : '';
+  let tries = 0;
+  const max = typeof maxTries === 'number' && maxTries > 0 ? (maxTries | 0) : 3;
+  const go = function () {
+    img.src = resolveAssetPath(base);
+  };
+  const onErr = function () {
+    tries++;
+    if (tries >= max) {
+      if (KADEN_DEBUG) console.warn('[KadenFighters] image give up', label, base, tries);
+      img.removeEventListener('error', onErr);
+      return;
+    }
+    setTimeout(function () { go(); }, 180 * tries);
+  };
+  const onOk = function () {
+    img.removeEventListener('error', onErr);
+  };
+  img.addEventListener('load', onOk, { once: true });
+  img.addEventListener('error', onErr);
+  go();
+}
 const ASTRA_FIGHTER_SHEET_SRC = [
   `assets/astra_fighter_sheet.png?v=${ASTRA_ASSET_VER}`,
   `assets/astra_raijin.png?v=${ASTRA_ASSET_VER}`,
@@ -171,14 +208,14 @@ const ASTRA_FIGHTER_SHEET_SRC = [
   `assets/astra_yuki.png?v=${ASTRA_ASSET_VER}`,
 ];
 const astraFighterSheets = [];
+/** Once an ASTRA sheet has loaded, keep treating the slot as ASTRA so battle art never flips to FTKW on transient `complete`/retry. */
+const _astraSheetEverReady = [false, false, false, false, false];
 for (let si = 0; si < ASTRA_FIGHTER_SHEET_SRC.length; si++) {
   const src = ASTRA_FIGHTER_SHEET_SRC[si];
   const im = new Image();
   if (src) {
-    im.src = resolveAssetPath(src);
-    im.addEventListener('error', function () {
-      if (KADEN_DEBUG) console.warn('[KadenFighters] ASTRA sheet failed to load:', src, im.naturalWidth);
-    });
+    const tag = 'astra[' + si + ']';
+    armImageWithNetworkRetry(im, src, tag);
   }
   astraFighterSheets.push(im);
 }
@@ -188,8 +225,14 @@ function astraSheetForChar(c) {
   return astraFighterSheets[ci] || null;
 }
 function charHasAstraSheet(c) {
-  const im = astraSheetForChar(c);
-  return !!(im && im.complete && (im.naturalWidth | 0) > 0);
+  const ci = c | 0;
+  if (ci < 0 || ci > 4) return false;
+  if (_astraSheetEverReady[ci]) return true;
+  const im = astraSheetForChar(ci);
+  if (!im) return false;
+  const ok = !!(im.complete && (im.naturalWidth | 0) > 0);
+  if (ok) _astraSheetEverReady[ci] = true;
+  return ok;
 }
 const ASTRA = { w: 1376, h: 768, cellW: 275, cellH: 384, cols: 5, rows: 2 };
 function astraCell(col, row) {
@@ -199,10 +242,9 @@ function astraCell(col, row) {
   const sh = ASTRA.cellH;
   return { sx: c * ASTRA.cellW, sy: r * ASTRA.cellH, sw, sh };
 }
-/** High-res Kaden (gameplay) — JFIF, chroma for black; sheet used for some moves. */
+/** High-res Kaden (gameplay) — PNG, black keyed; sheet used for some moves. */
 const kadenGameplay = new Image();
-kadenGameplay.src = 'assets/kaden-gameplay.jpg';
-
+armImageWithNetworkRetry(kadenGameplay, `assets/kaden-gameplay.png?v=${ASTRA_ASSET_VER}`, 'kaden-gameplay');
 const _chromaCanvas = document.createElement('canvas');
 const _chromaCtx = _chromaCanvas.getContext('2d', { willReadFrequently: true });
 if (_chromaCtx) { applyCtxImageSmoothingOff(_chromaCtx); }
@@ -212,7 +254,8 @@ if (_kadenBakedCtx) { applyCtxImageSmoothingOff(_kadenBakedCtx); }
 const _menuAstraTmp = document.createElement('canvas');
 const _menuAstraTmpCtx = _menuAstraTmp.getContext('2d', { willReadFrequently: true });
 if (_menuAstraTmpCtx) { applyCtxImageSmoothingOff(_menuAstraTmpCtx); }
-let kadenChromaBaked = false;const _chromaCache = new Map();const _outlineCache = new Map();const _CHROMA_CACHE_MAX=80;
+let kadenChromaBaked = false;
+const _chromaCache = new Map();const _outlineCache = new Map();const _CHROMA_CACHE_MAX=200;
 const _rimCache = new Map();
 const KFR_SF6_RIM = true;
 const KFR_SF6_VALUE_LIFT = true;
@@ -315,6 +358,60 @@ function keySheetChromaDespeckle(p, w, h) {
       if (t === 0) p[i + 3] = 0;
     }
   }
+}
+/**
+ * Tighten fight-strip sprites to the visible character (removes large empty margins after
+ * black-key) so gameplay reads like Street Fighter: one figure, not a whole cell “frame”.
+ */
+function alphaBoundsRgba(p, w, h, aMin) {
+  const lo = aMin == null ? 0 : aMin | 0;
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for (let y = 0; y < h; y++) {
+    const row = y * w * 4;
+    for (let x = 0; x < w; x++) {
+      if (p[row + x * 4 + 3] > lo) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return null;
+  return { minX, minY, maxX, maxY };
+}
+function trimFtkwChromaToCharacter(cvs) {
+  if (!cvs) return cvs;
+  const w0 = cvs.width | 0, h0 = cvs.height | 0;
+  if (w0 < 2 || h0 < 2) return cvs;
+  const cx = cvs.getContext('2d', { willReadFrequently: true });
+  if (!cx) return cvs;
+  const id = cx.getImageData(0, 0, w0, h0);
+  // Use any visible alpha so soft edges still bound the figure (aMin=6 could miss the body).
+  const b = alphaBoundsRgba(id.data, w0, h0, 0);
+  if (!b) return cvs;
+  const tw = b.maxX - b.minX + 1, th = b.maxY - b.minY + 1;
+  if (tw < 2 || th < 2) return cvs;
+  if (tw >= w0 * 0.98 && th >= h0 * 0.98) return cvs;
+  const out = document.createElement('canvas');
+  out.width = tw; out.height = th;
+  const ox = out.getContext('2d', { willReadFrequently: true });
+  if (!ox) return cvs;
+  applyCtxImageSmoothingOff(ox);
+  ox.drawImage(cvs, b.minX, b.minY, tw, th, 0, 0, tw, th);
+  return out;
+}
+/** If chroma was too strong, the frame is ~empty — use raw pixels instead (still visible, SF6-style is secondary). */
+function sheetChromaGoneTooFar(p, w, h, astra) {
+  const area = (w | 0) * (h | 0);
+  if (area < 1) return true;
+  let n = 0;
+  for (let i = 3; i < p.length; i += 4) {
+    if (p[i] > 12) n++;
+  }
+  const minAstra = Math.max(20, (area * 0.00035) | 0);
+  const minMatte = Math.max(40, (area * 0.0008) | 0);
+  return astra ? n < minAstra : n < minMatte;
 }
 function keyKadenChromaToTransparent(p) {
   for (let i = 0; i < p.length; i += 4) {
@@ -569,15 +666,293 @@ function bakeKadenPortraitChromaOnce() {
 }
 kadenGameplay.addEventListener('load', () => { kadenChromaBaked = false; bakeKadenPortraitChromaOnce(); });
 if (kadenGameplay.complete) bakeKadenPortraitChromaOnce();
+/** In-battle Kaden: Taekwondo move sheet (1024×682, black key). One strip per move; each strip sliced into equal-width frames. */
+const kadenTaekwondoSheet = new Image();
+const _FTKW_RETRIES = 6;
+armImageWithNetworkRetry(kadenTaekwondoSheet, `assets/kaden_taekwondo_sheet.png?v=${ASTRA_ASSET_VER}`, 'kaden_taekwondo_sheet', _FTKW_RETRIES);
+/** In-battle Raijin: Muay Thai + lightning (1024×682, black key) — same strip layout as Kaden sheet. */
+const raijinTaekwondoSheet = new Image();
+armImageWithNetworkRetry(raijinTaekwondoSheet, `assets/raijin_taekwondo_sheet.png?v=${ASTRA_ASSET_VER}`, 'raijin_taekwondo_sheet', _FTKW_RETRIES);
+/** In-battle Hikari: Wushu sheet (1024×682, black key). */
+const hikariWushuSheet = new Image();
+armImageWithNetworkRetry(hikariWushuSheet, `assets/hikari_wushu_sheet.png?v=${ASTRA_ASSET_VER}`, 'hikari_wushu_sheet', _FTKW_RETRIES);
+/** In-battle Ren: Aikido sheet (1024×682, black key). */
+const renAikidoSheet = new Image();
+armImageWithNetworkRetry(renAikidoSheet, `assets/ren_aikido_sheet.png?v=${ASTRA_ASSET_VER}`, 'ren_aikido_sheet', _FTKW_RETRIES);
+/** In-battle Yuki: Judo sheet (1024×682, black key). */
+const yukiJudoSheet = new Image();
+armImageWithNetworkRetry(yukiJudoSheet, `assets/yuki_judo_sheet.png?v=${ASTRA_ASSET_VER}`, 'yuki_judo_sheet', _FTKW_RETRIES);
+/** Prioritize + decode so fightTkwUseInFight is true on frame 1 (avoids ASTRA fallback). */
+(function primeFightMoveSheetsFromCache() {
+  const list = [kadenTaekwondoSheet, raijinTaekwondoSheet, hikariWushuSheet, renAikidoSheet, yukiJudoSheet];
+  function tryDecode(im) {
+    if (!im || !im.decode) return;
+    if (im.complete && (im.naturalWidth | 0) > 0) im.decode().catch(function () {});
+  }
+  list.forEach(function (im) {
+    if (!im) return;
+    try { if ('fetchPriority' in im) im.fetchPriority = 'high'; } catch (_) { /* */ }
+    tryDecode(im);
+    im.addEventListener('load', function () { tryDecode(im); }, { once: true });
+  });
+})();
+
+const KADEN_TKW = {
+  idle: { x: 285, y: 13, w: 108, h: 31, f: 3 },
+  /**
+   * Order matches the sheet: jab, front, round, jump, crescent, axe, side, low, backflip, spin/jab2.
+   * (x, y, w, h) from automated bbox on `assets/kaden_taekwondo_sheet.png`; f = frame count in strip.
+   */
+  moves: [
+    { x: 32, y: 104, w: 45, h: 67, f: 3 },
+    { x: 96, y: 104, w: 46, h: 67, f: 3 },
+    { x: 165, y: 104, w: 48, h: 67, f: 4 },
+    { x: 272, y: 105, w: 47, h: 66, f: 4 },
+    { x: 342, y: 107, w: 49, h: 64, f: 3 },
+    { x: 410, y: 107, w: 47, h: 64, f: 3 },
+    { x: 519, y: 104, w: 29, h: 67, f: 4 },
+    { x: 580, y: 104, w: 38, h: 67, f: 4 },
+    { x: 645, y: 104, w: 74, h: 67, f: 5 },
+    { x: 753, y: 104, w: 44, h: 67, f: 3 }
+  ],
+  s1: { x: 323, y: 500, w: 154, h: 131, f: 6 },
+  s2: { x: 807, y: 500, w: 70, h: 131, f: 6 }
+};
+/** Game action / attack name → move strip index 0..9. */
+const KADEN_TKW_NORM = {
+  jab: 0, cross: 0, uppercut: 0, hook: 2, palm: 4,
+  'front kick': 1, 'push kick': 1, 'flick kick': 1,
+  'round kick': 2, 'spin kick': 9, 'crescent kick': 4, crescent: 4,
+  'jump kick': 3, 'low kick': 7, 'axe kick': 5, 'side kick': 6, 'back kick': 8
+};
+/** Raijin: jab, low, round, knee, elbow, spin back, teep, sweep, flying, wide finisher. */
+const RAIJIN_TKW = {
+  idle: { x: 292, y: 12, w: 92, h: 33, f: 3 },
+  moves: [
+    { x: 24, y: 104, w: 53, h: 67, f: 3 },
+    { x: 96, y: 104, w: 50, h: 67, f: 3 },
+    { x: 166, y: 104, w: 53, h: 67, f: 3 },
+    { x: 272, y: 107, w: 43, h: 64, f: 3 },
+    { x: 346, y: 107, w: 55, h: 64, f: 3 },
+    { x: 419, y: 107, w: 38, h: 64, f: 4 },
+    { x: 530, y: 107, w: 48, h: 64, f: 3 },
+    { x: 598, y: 106, w: 59, h: 65, f: 5 },
+    { x: 782, y: 107, w: 49, h: 64, f: 4 },
+    { x: 909, y: 104, w: 104, h: 67, f: 4 }
+  ],
+  s1: { x: 320, y: 500, w: 175, h: 131, f: 5 },
+  s2: { x: 881, y: 500, w: 118, h: 131, f: 5 }
+};
+const RAIJIN_TKW_NORM = {
+  jab: 0, cross: 0, uppercut: 0, hook: 4, palm: 4,
+  'low kick': 1, 'flick kick': 1, 'crescent kick': 2, crescent: 2,
+  'round kick': 2, 'spin kick': 5, 'back kick': 5,
+  'front kick': 6, 'push kick': 6, 'side kick': 6,
+  'jump kick': 8, 'axe kick': 3
+};
+/** Wushu: palm, front snap, spin hook, flying side, swallow, round, backfist, low sweep, backflip, finisher. */
+const HIKARI_TKW = {
+  idle: { x: 224, y: 12, w: 172, h: 33, f: 4 },
+  moves: [
+    { x: 27, y: 111, w: 33, h: 60, f: 4 },
+    { x: 82, y: 111, w: 33, h: 60, f: 4 },
+    { x: 135, y: 111, w: 34, h: 60, f: 4 },
+    { x: 194, y: 111, w: 32, h: 60, f: 3 },
+    { x: 266, y: 111, w: 37, h: 60, f: 3 },
+    { x: 323, y: 111, w: 34, h: 60, f: 3 },
+    { x: 378, y: 111, w: 38, h: 60, f: 3 },
+    { x: 432, y: 108, w: 68, h: 63, f: 5 },
+    { x: 528, y: 111, w: 39, h: 60, f: 4 },
+    { x: 630, y: 112, w: 42, h: 59, f: 4 }
+  ],
+  s1: { x: 84, y: 500, w: 318, h: 131, f: 4 },
+  s2: { x: 855, y: 500, w: 111, h: 131, f: 4 }
+};
+const HIKARI_TKW_NORM = {
+  jab: 0, cross: 0, palm: 0, uppercut: 0, hook: 6,
+  'front kick': 1, 'push kick': 1, 'flick kick': 1, 'side kick': 1,
+  'round kick': 5, 'crescent kick': 5, crescent: 5, 'spin kick': 2,
+  'jump kick': 3, 'low kick': 7, 'axe kick': 4, 'back kick': 8
+};
+/** Aikido: open palm, flow, throw entry, irimi, tenkan, grab counter, shiho, koten, pin, finisher. */
+const REN_TKW = {
+  idle: { x: 24, y: 105, w: 40, h: 71, f: 3 },
+  moves: [
+    { x: 86, y: 105, w: 38, h: 72, f: 3 },
+    { x: 144, y: 105, w: 45, h: 72, f: 4 },
+    { x: 234, y: 105, w: 52, h: 72, f: 4 },
+    { x: 303, y: 104, w: 53, h: 72, f: 3 },
+    { x: 378, y: 108, w: 45, h: 68, f: 3 },
+    { x: 427, y: 106, w: 46, h: 72, f: 3 },
+    { x: 504, y: 107, w: 38, h: 70, f: 4 },
+    { x: 573, y: 107, w: 40, h: 70, f: 5 },
+    { x: 627, y: 107, w: 40, h: 70, f: 5 },
+    { x: 677, y: 104, w: 62, h: 72, f: 5 }
+  ],
+  s1: { x: 160, y: 495, w: 315, h: 144, f: 7 },
+  s2: { x: 688, y: 480, w: 317, h: 160, f: 5 }
+};
+const REN_TKW_NORM = {
+  jab: 0, cross: 0, palm: 0, uppercut: 0, hook: 5,
+  'front kick': 1, 'push kick': 1, 'flick kick': 1, 'side kick': 1,
+  'round kick': 2, 'crescent kick': 2, crescent: 2, 'spin kick': 2,
+  'jump kick': 3, 'low kick': 6, 'axe kick': 3, 'back kick': 4
+};
+/** Judo: grip, seoi, o-goshi, sweep, uchi-mata, kote, ashi, side, kesa, finisher. */
+const YUKI_TKW = {
+  idle: { x: 24, y: 106, w: 41, h: 88, f: 3 },
+  moves: [
+    { x: 90, y: 100, w: 42, h: 94, f: 3 },
+    { x: 163, y: 108, w: 43, h: 85, f: 4 },
+    { x: 240, y: 100, w: 52, h: 93, f: 3 },
+    { x: 18, y: 255, w: 42, h: 80, f: 3 },
+    { x: 70, y: 255, w: 42, h: 80, f: 3 },
+    { x: 121, y: 256, w: 100, h: 79, f: 4 },
+    { x: 256, y: 255, w: 58, h: 80, f: 3 },
+    { x: 95, y: 391, w: 91, h: 66, f: 5 },
+    { x: 310, y: 402, w: 105, h: 54, f: 5 },
+    { x: 305, y: 100, w: 49, h: 92, f: 3 }
+  ],
+  s1: { x: 280, y: 499, w: 140, h: 124, f: 6 },
+  s2: { x: 710, y: 505, w: 165, h: 119, f: 6 }
+};
+const YUKI_TKW_NORM = {
+  jab: 0, cross: 0, palm: 0, uppercut: 0, hook: 1,
+  'front kick': 2, 'push kick': 2, 'flick kick': 2, 'side kick': 2,
+  'round kick': 1, 'crescent kick': 1, crescent: 1, 'spin kick': 1,
+  'jump kick': 3, 'low kick': 5, 'axe kick': 3, 'back kick': 2
+};
+
+function kadenTaekwondoSheetReady() {
+  const im = kadenTaekwondoSheet;
+  return !!(im && im.complete && (im.naturalWidth | 0) > 0 && (im.naturalHeight | 0) > 0);
+}
+function raijinTaekwondoSheetReady() {
+  const im = raijinTaekwondoSheet;
+  return !!(im && im.complete && (im.naturalWidth | 0) > 0 && (im.naturalHeight | 0) > 0);
+}
+function hikariWushuSheetReady() {
+  const im = hikariWushuSheet;
+  return !!(im && im.complete && (im.naturalWidth | 0) > 0 && (im.naturalHeight | 0) > 0);
+}
+function renAikidoSheetReady() {
+  const im = renAikidoSheet;
+  return !!(im && im.complete && (im.naturalWidth | 0) > 0 && (im.naturalHeight | 0) > 0);
+}
+function yukiJudoSheetReady() {
+  const im = yukiJudoSheet;
+  return !!(im && im.complete && (im.naturalWidth | 0) > 0 && (im.naturalHeight | 0) > 0);
+}
+function fightTkwDef(charIdx) {
+  const c = charIdx | 0;
+  if (c === 0) return KADEN_TKW;
+  if (c === 1) return RAIJIN_TKW;
+  if (c === 2) return HIKARI_TKW;
+  if (c === 3) return REN_TKW;
+  if (c === 4) return YUKI_TKW;
+  return null;
+}
+function fightTkwImageForChar(charIdx) {
+  const c = charIdx | 0;
+  if (c === 0) return kadenTaekwondoSheet;
+  if (c === 1) return raijinTaekwondoSheet;
+  if (c === 2) return hikariWushuSheet;
+  if (c === 3) return renAikidoSheet;
+  if (c === 4) return yukiJudoSheet;
+  return kadenTaekwondoSheet;
+}
+/** Kaden–Yuki (0–4) use full move sheet in battle when the PNG is loaded. */
+function fightTkwUseInFight(f) {
+  const c = f.char | 0;
+  if (c === 0) return kadenTaekwondoSheetReady();
+  if (c === 1) return raijinTaekwondoSheetReady();
+  if (c === 2) return hikariWushuSheetReady();
+  if (c === 3) return renAikidoSheetReady();
+  if (c === 4) return yukiJudoSheetReady();
+  return false;
+}
+function tkwSubRect(meta, fr) {
+  const f = Math.max(1, meta.f | 0);
+  const fi = Math.max(0, Math.min(f - 1, fr | 0));
+  const w0 = (meta.w / f);
+  const sx = (meta.x + fi * w0) | 0;
+  const sw0 = (fi === f - 1 ? meta.w - (sx - meta.x) : w0) | 0;
+  return { sx, sy: meta.y | 0, sw: Math.max(1, sw0), sh: Math.max(1, meta.h | 0) };
+}
+/** Must match `physics` lock tick (0.01) or the last ~6 frames of an attack can drop tkw and show the wrong strip. */
+const TKW_LOCK_MIN = 0.01;
+function tkwFrameIndexForLock(f) {
+  const kw = f._tkw;
+  const d = fightTkwDef(f.char | 0);
+  if (kw && f.lock > TKW_LOCK_MIN && kw.l0 > 0) {
+    const t = 1 - f.lock / kw.l0;
+    return Math.max(0, Math.min(kw.n - 1, Math.floor(t * kw.n)));
+  }
+  if (d && f.action === 'super' && f.lock > TKW_LOCK_MIN) {
+    const nf = Math.max(1, d.s2.f | 0);
+    return Math.max(0, Math.min(nf - 1, Math.floor((1 - f.lock / 60) * nf)));
+  }
+  if (d && f.action === 'special' && f.lock > TKW_LOCK_MIN) {
+    const nf = Math.max(1, d.s1.f | 0);
+    const c = f.char | 0;
+    const spL = c === 0 ? 38 : c === 1 ? 30 : c === 2 ? 22 : c === 3 ? 30 : c === 4 ? 36 : 32;
+    return Math.max(0, Math.min(nf - 1, Math.floor((1 - f.lock / spL) * nf)));
+  }
+  return 0;
+}
+function tkwMetaForFighter(f) {
+  const d = fightTkwDef(f.char | 0);
+  if (!d) return KADEN_TKW.idle;
+  if (f._tkw && f.lock > TKW_LOCK_MIN) {
+    if (f._tkw.kind === 'n') return d.moves[f._tkw.mid] || d.moves[0];
+    if (f._tkw.kind === 's1') return d.s1;
+    if (f._tkw.kind === 's2') return d.s2;
+  }
+  if (f.action === 'super' && f.lock > TKW_LOCK_MIN) return d.s2;
+  if (f.action === 'special' && f.lock > TKW_LOCK_MIN) return d.s1;
+  if (f.action === 'frontflip' || f.action === 'backflip') return d.moves[3];
+  if (f.action === 'jump') return d.moves[3];
+  return d.idle;
+}
+function tkwBaseFrame(f) {
+  if (f._tkw && f.lock > TKW_LOCK_MIN) return tkwFrameIndexForLock(f);
+  if (f.action === 'super' && f.lock > TKW_LOCK_MIN) return tkwFrameIndexForLock(f);
+  if (f.action === 'special' && f.lock > TKW_LOCK_MIN) return tkwFrameIndexForLock(f);
+  if (f.action === 'frontflip' || f.action === 'backflip') {
+    const u = 1 - f.lock / FIGHTER_FLIP_FRAMES;
+    return Math.max(0, Math.min(3, (u * 4) | 0));
+  }
+  {
+    const _def = fightTkwDef(f.char | 0);
+    const _idleF = _def && _def.idle && _def.idle.f ? Math.max(1, _def.idle.f | 0) : 3;
+    if (f.action === 'walk') return (Math.floor(f.animT) % _idleF);
+    if (f.action === 'idle' || f.action === 'block' || f.action === 'crouch') { return (Math.floor(f.animT * 0.4) % _idleF); }
+  }
+  if (f.action === 'jump') return Math.max(0, Math.min(3, Math.floor((FLOOR_FIGHT_Y - f.y) / 45)));
+  if (f.action === 'hurt' || f.action === 'knockdown') return 0;
+  return 0;
+}
+function tkwSrcForDraw(f) {
+  const m = tkwMetaForFighter(f);
+  return tkwSubRect(m, tkwBaseFrame(f));
+}
 /**
  * In battle, Kaden always uses the sheet row (side-view) so `ctx.scale(-1,1)` flips
  * them toward the opponent. The static HD `kaden-gameplay` is front view — it never
  * looks like true left/right facing. Menus / end cards use the classic sheet or HD
- * depending on USE_CLASSIC_KADEN_PORTRAIT.
+ * depending on USE_CLASSIC_KADEN_PORTRAIT. Character select uses `astra_fighter_sheet`
+ * for Kaden’s card (bust + mini + portrait), same as other ASTRA fighters. Cell (0,0) is
+ * built from `kaden-gameplay` in the repo; HD `kaden-gameplay` is for VS / loss / taunt.
  */
 const USE_CLASSIC_KADEN_PORTRAIT = typeof location === 'undefined' || (String(location.search || '').indexOf('kadenHD=1') < 0);
+/**
+ * HD `kaden-gameplay` for VS / loss / taunt art (not the character-select ASTRA card).
+ * `?kadenClassic=1` forces non-HD/legacy; `?kadenHD=1` can still request HD when the PNG is available.
+ */
 function useKadenHdMenuPortrait() {
-  return !USE_CLASSIC_KADEN_PORTRAIT && kadenGameplay.complete && kadenGameplay.naturalWidth > 0;
+  if (String(location.search || '').indexOf('kadenClassic=1') >= 0) return false;
+  if (kadenGameplay.complete && (kadenGameplay.naturalWidth | 0) > 0) return true;
+  return !USE_CLASSIC_KADEN_PORTRAIT;
 }
 function useKadenPortraitForAction() {
   return false;
@@ -640,10 +1015,15 @@ const rowY = [0, 200, 392, 572, 748];
 const rowH = [198, 190, 178, 174, 168];
 
 function sheetRowTop(charIdx) {
+  if ((charIdx | 0) === BOSS_INDEX) return 0; // `reigen_classic_row.png` is a single legacy row; UVs start at y=0
   const r = characters[charIdx]?.row;
   return rowY[r] ?? rowY[0];
 }
 function sheetRowHeight(charIdx) {
+  if ((charIdx | 0) === BOSS_INDEX) {
+    const r = characters[BOSS_INDEX]?.row;
+    return (r != null && r >= 0 && r < rowH.length) ? rowH[r] : rowH[1];
+  }
   const r = characters[charIdx]?.row;
   return rowH[r] ?? rowH[0];
 }
@@ -1510,6 +1890,8 @@ function drawOpponentFullBody(speaker, boxX, boxY, boxW, boxH) {
     const ox = boxX + (((boxW - dw) * 0.5) | 0);
     const oy = boxY + (boxH - dh);
     ctx.drawImage(kadenGameplay, 0, 0, aw, ah, ox, oy, dw, dh);
+  } else if (charHasAstraSheet(speaker | 0)) {
+    drawAstraCellKeyedInBox(ctx, speaker | 0, 0, 0, boxX, boxY, boxW, boxH, { vertical: 'bottom', scaleMult: 1.12 });
   } else if (sheet && sheet.complete && sheet.naturalWidth > 0) {
     const sw = 355;
     const sh = ph;
@@ -2208,26 +2590,96 @@ function menu() {
 /** Roster select: card grid + type sizes (G_WIDTH 1280) — single source of truth for layout. */
 const ROSTER_LAYOUT = (function () {
   const n = typeof SELECTABLE_COUNT === 'number' ? SELECTABLE_COUNT : 5;
-  const cardW = 252;
-  const gap = 2;
+  const gap = 0;
+  const cardW = ((1280 - (n - 1) * gap) / n) | 0;
   const totalW = n * cardW + (n - 1) * gap;
   return {
     cardW,
-    cardH: 598,
+    cardH: 636,
     gap,
-    topY: 52,
-    pad: 6,
-    stripH: 152,
-    portW: 224,
-    portH: 292,
+    /** Flush under header bar; see drawCharacterSelectHeaderBar topH. */
+    topY: 46,
+    pad: 4,
+    /** Slightly shorter art blocks so the text stack below the portrait fits without overlap. */
+    stripH: 168,
+    portW: 248,
+    portH: 300,
     marginX: (1280 - totalW) / 2,
-    fontName: 48,
-    fontStyle: 24,
-    fontSp: 22,
-    fontDesc: 19,
-    fontSu: 22,
+    fontName: 40,
+    fontStyle: 20,
+    fontSp: 18,
+    fontDesc: 12,
+    fontSu: 18,
+    /** `specialDesc` wraps within card width; line height in px (system font). */
+    descLineH: 12,
+    /** At most 2 short lines of SP blurb (see characterSelect) so bottom lines don’t collide. */
+    descMaxLines: 2,
   };
 })();
+
+/**
+ * `drawText` uses alphabetic baseline: space so the next line’s text doesn’t overlap the one above.
+ */
+function rosterTextBaselineAfter(fontSizePx) {
+  const s = fontSizePx | 0;
+  return Math.max(16, (s * 0.62) | 0) + 3;
+}
+
+/**
+ * Split `specialDesc` to fit `maxW` (set `ctx.font` first). At most `maxLines` lines; adds … if truncated.
+ */
+function wordWrapRosterDescLines(ctx, text, maxW, maxLines) {
+  const cap = Math.max(1, Math.min(4, maxLines | 0));
+  const words = String(text != null ? text : '')
+    .replace(/\r/g, '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return [''];
+  const out = [];
+  let i = 0;
+  let cur = '';
+  while (i < words.length && out.length < cap) {
+    const word = words[i];
+    const cand = cur ? cur + ' ' + word : word;
+    if (ctx.measureText(cand).width <= maxW) {
+      cur = cand;
+      i++;
+      continue;
+    }
+    if (cur) {
+      out.push(cur);
+      cur = '';
+      continue;
+    }
+    let piece = '';
+    for (let j = 0; j < word.length; j++) {
+      const test = piece + word[j];
+      if (ctx.measureText(test).width <= maxW) {
+        piece = test;
+      } else {
+        if (piece) {
+          out.push(piece);
+          piece = word[j];
+          if (out.length >= cap) break;
+        } else {
+          out.push(String(word[j]));
+          if (out.length >= cap) break;
+        }
+      }
+    }
+    if (out.length < cap && piece) cur = piece;
+    i++;
+  }
+  if (cur && out.length < cap) out.push(cur);
+  if (i < words.length && out.length) {
+    const li = out.length - 1;
+    let t = out[li] + '…';
+    while (t.length > 2 && ctx.measureText(t).width > maxW) t = t.slice(0, -2) + '…';
+    out[li] = t;
+  }
+  return out;
+}
 function rosterCardLeft(i) {
   return ROSTER_LAYOUT.marginX + i * (ROSTER_LAYOUT.cardW + ROSTER_LAYOUT.gap);
 }
@@ -2242,63 +2694,88 @@ function rosterCardStripRect(i) {
 }
 function rosterCardPortraitRect(i) {
   const r = rosterCardStripRect(i);
-  const y = r.y + r.h + 10;
+  const y = r.y + r.h + 8;
   const x = rosterCardLeft(i) + (ROSTER_LAYOUT.cardW - ROSTER_LAYOUT.portW) * 0.5;
   return { x, y, w: ROSTER_LAYOUT.portW, h: ROSTER_LAYOUT.portH };
 }
 function drawCharacterSelectHeaderBar() {
   const mLabel = { tournament: 'Tournament', story: 'Story (full arc)', training: 'Training (dummy AI)', versus: 'Local Versus (2P)' }[pendingPlayMode] || 'Tournament';
-  const topH = 44;
-  const topW = 960;
-  const topX = (1280 - topW) / 2;
+  const lines = mLabel.length > 42 ? mLabel.slice(0, 40) + '…' : mLabel;
+  const topH = 40;
+  const topW = 1280;
+  const topX = 0;
   const topY = 4;
-  const rr = 10;
+  const rr = 12;
+  const padL = 32;
+  const padR = 24;
   ctx.save();
   const bg = ctx.createLinearGradient(topX, topY, topX, topY + topH);
-  bg.addColorStop(0, 'rgba(8,4,20,0.88)');
-  bg.addColorStop(1, 'rgba(4,2,12,0.92)');
+  bg.addColorStop(0, 'rgba(16, 10, 36, 0.96)');
+  bg.addColorStop(0.45, 'rgba(8, 6, 20, 0.98)');
+  bg.addColorStop(1, 'rgba(4, 3, 12, 0.99)');
   ctx.fillStyle = bg;
   roundRect(topX, topY, topW, topH, rr, true, false);
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = 'rgba(180, 150, 255, 0.5)';
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = 'rgba(130, 100, 200, 0.42)';
   roundRect(topX, topY, topW, topH, rr, false, true);
-  const ty = topY + topH * 0.5;
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+  roundRect(topX + 1, topY + 1, topW - 2, topH - 2, Math.max(2, rr - 1), false, true);
+  const midY = (topY + topH * 0.5) | 0;
   ctx.textBaseline = 'middle';
+  let hint = 'A / D  ·  arrows  ·  Enter to play';
+  ctx.font = '11px system-ui, -apple-system, sans-serif';
+  if (ctx.measureText(hint).width > 400) hint = 'Arrows or A/D · Enter to play';
+  ctx.textAlign = 'center';
+  const cxBar = (topX + topW * 0.5) | 0;
+  ctx.fillStyle = 'rgba(150, 140, 188, 0.78)';
+  ctx.fillText(hint, cxBar, midY);
   ctx.textAlign = 'left';
-  const tx = topX + 20;
+  const tx = topX + padL;
+  ctx.font = '800 28px system-ui, -apple-system, "Segoe UI", sans-serif';
+  ctx.letterSpacing = '0.04em';
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
   ctx.lineJoin = 'round';
   ctx.miterLimit = 2;
-  ctx.font = 'bold 40px Impact, "Arial Black", system-ui, sans-serif';
-  ctx.lineWidth = 2.2;
-  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-  ctx.fillStyle = '#f4ecff';
-  ctx.strokeText('ROSTER', tx, ty);
-  ctx.fillText('ROSTER', tx, ty);
-  const chipW = 380;
-  const chipX = topX + topW - chipW - 12;
-  const chipY = topY + 5;
-  const chipH = topH - 10;
-  const cr = 7;
-  ctx.fillStyle = 'rgba(4, 40, 28, 0.9)';
-  roundRect(chipX, chipY, chipW, chipH, cr, true, false);
-  ctx.strokeStyle = 'rgba(80, 220, 170, 0.5)';
-  roundRect(chipX, chipY, chipW, chipH, cr, false, true);
-  ctx.textAlign = 'left';
-  ctx.font = '600 12px system-ui, sans-serif';
+  const title = 'ROSTER';
+  ctx.strokeText(title, tx, midY);
   ctx.lineWidth = 0;
-  ctx.fillStyle = '#4fc998';
-  ctx.fillText('MODE', chipX + 12, chipY + 16);
-  const lines = mLabel.length > 44 ? mLabel.slice(0, 42) + '…' : mLabel;
-  ctx.font = '600 15px system-ui, sans-serif';
-  ctx.fillStyle = '#a8ffe8';
-  ctx.fillText(lines, chipX + 12, chipY + 34);
+  ctx.letterSpacing = '0.08em';
+  const g = ctx.createLinearGradient(tx, midY - 16, tx, midY + 16);
+  g.addColorStop(0, '#fff8ff');
+  g.addColorStop(1, '#c8b8e8');
+  ctx.fillStyle = g;
+  ctx.fillText(title, tx, midY);
+  ctx.letterSpacing = '0';
+  ctx.font = '600 10px system-ui, sans-serif';
+  const wMode = ctx.measureText('MODE').width;
+  ctx.font = '600 14px system-ui, sans-serif';
+  const wLab = ctx.measureText(lines).width;
+  const chipW = Math.min(380, Math.max(200, Math.ceil(Math.max(wMode, wLab) + 32)));
+  const chipH = 32;
+  const chipX = (topX + topW - padR - chipW) | 0;
+  const chipY = (topY + (topH - chipH) * 0.5) | 0;
+  const cr2 = 8;
+  ctx.fillStyle = 'rgba(4, 28, 30, 0.92)';
+  roundRect(chipX, chipY, chipW, chipH, cr2, true, false);
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = 'rgba(72, 200, 165, 0.55)';
+  roundRect(chipX, chipY, chipW, chipH, cr2, false, true);
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#5dccb0';
+  ctx.font = '600 10px system-ui, sans-serif';
+  ctx.fillText('MODE', chipX + 12, chipY + 13);
+  ctx.fillStyle = '#b5f0e5';
+  ctx.font = '600 13px system-ui, sans-serif';
+  ctx.fillText(lines, chipX + 12, chipY + 27);
   ctx.restore();
 }
 function drawCharacterSelectFooterBar() {
-  const botH = 46;
-  const botW = 1080;
-  const botX = (1280 - botW) / 2;
-  const botY = 664;
+  const botH = 36;
+  const botW = 1280;
+  const botX = 0;
+  const botY = 684;
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   roundRect(botX, botY, botW, botH, 8, true, false);
@@ -2342,6 +2819,7 @@ function characterSelect() {
     ctx.lineWidth = i === sel ? 6 : 3;
     ctx.strokeRect(x, rl.topY, rl.cardW, rl.cardH);
     const hasAstra = charHasAstraSheet(i);
+    // ASTRA: [bust | name+kanji | mini] + main portrait from cell (0,0) — same for Kaden, Raijin, Hikari.
     if (hasAstra) {
       drawAstraRosterTopBanner(ctx, i, c, 0, 0, strip.x, strip.y, strip.w, strip.h);
     } else if (i === 0 && useKadenHdMenuPortrait()) {
@@ -2350,7 +2828,6 @@ function characterSelect() {
       ctx.drawImage(sheet, 0, syRow, 355, shRow, strip.x, strip.y, strip.w, strip.h);
     }
     if (hasAstra) {
-      // Bottom-align + cover: center was cropping feet on tall ASTRA cells; feet read as the “ground” line on the card.
       drawAstraCellKeyedInBox(ctx, i, 0, 0, port.x, port.y, port.w, port.h, { vertical: 'bottom', scaleMult: 1.12 });
     } else if (i === 0 && useKadenHdMenuPortrait()) {
       drawKadenMenuImageCoverClipped(ctx, kadenGameplay, port.x, port.y, port.w, port.h, { vertical: 'bottom', scaleMult: 1.12 });
@@ -2386,16 +2863,31 @@ function characterSelect() {
       }
       ctx.restore();
     }
-    const yName = (port.y + port.h + 16) | 0;
-    const yStyle = yName + 24;
-    const ySp = yStyle + 26;
-    const yDesc = ySp + 22;
-    const ySu = yDesc + 24;
+    const yName = (port.y + port.h + 5) | 0;
+    const yStyle = yName + rosterTextBaselineAfter(rl.fontName);
+    const ySp = yStyle + rosterTextBaselineAfter(rl.fontStyle);
+    const yDesc = ySp + rosterTextBaselineAfter(rl.fontSp) + 1;
+    const maxDescW = Math.max(40, (rl.cardW - 2 * rl.pad - 4) | 0);
+    const dSize = rl.fontDesc;
+    const dLH = rl.descLineH;
+    const dCap = (typeof rl.descMaxLines === 'number' && rl.descMaxLines > 0) ? (rl.descMaxLines | 0) : 2;
+    ctx.save();
+    ctx.font = '400 ' + dSize + 'px system-ui, sans-serif';
+    const descLines = wordWrapRosterDescLines(ctx, c.specialDesc, maxDescW, dCap);
+    ctx.restore();
+    const ySu = (yDesc + descLines.length * dLH + 5) | 0;
     drawText(c.name, cx, yName, rl.fontName, c.color, 'center');
     drawText(c.style, cx, yStyle, rl.fontStyle, '#ddd', 'center');
     drawText('SP: ' + c.special, cx, ySp, rl.fontSp, '#ffd65a', 'center');
-    const desc = c.specialDesc;
-    drawText(desc, cx, yDesc, rl.fontDesc, '#bbb', 'center');
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = '400 ' + dSize + 'px system-ui, sans-serif';
+    for (let di = 0; di < descLines.length; di++) {
+      ctx.fillStyle = '#bbb';
+      ctx.fillText(descLines[di], cx, (yDesc + di * dLH) | 0);
+    }
+    ctx.restore();
     drawText('SU: ' + c.super, cx, ySu, rl.fontSu, '#ff8888', 'center');
   }
   drawCharacterSelectFooterBar();
@@ -2432,7 +2924,8 @@ function makeFighter(charIdx, x, flip = false) {
     airFlipUsed: false, // one flip per time airborne until you land
     phase: 1,
     blockTimer: 0,   // AI: commit to block for N frames
-    actionCooldown: 0 // AI: don't re-pick decisions every frame
+    actionCooldown: 0, // AI: don't re-pick decisions every frame
+    _tkw: null        // { kind:'n'|'s1'|'s2', mid, n, l0 } — move-sheet anim (Kaden–Ren)
   };
 }
 
@@ -2489,6 +2982,26 @@ function attack(f, type, power, range) {
   if (f.lock > 0.01) return;
   f.action = type;
   f.lock = 24;
+  f._tkw = null;
+  if (fightTkwUseInFight(f)) {
+    const c0 = f.char | 0;
+    const d0 = fightTkwDef(c0);
+    if (c0 === 1 && type === 'special-strike' && d0) {
+      f._tkw = { kind: 's1', n: d0.s1.f, l0: 0 };
+      f.lock = 30;
+      f._tkw.l0 = f.lock;
+    } else if (d0) {
+      const nmap = c0 === 0 ? KADEN_TKW_NORM : c0 === 1 ? RAIJIN_TKW_NORM : c0 === 2 ? HIKARI_TKW_NORM : c0 === 3 ? REN_TKW_NORM : c0 === 4 ? YUKI_TKW_NORM : null;
+      if (nmap) {
+        const mid0 = nmap[type] != null ? nmap[type] : 0;
+        const _metaN = d0.moves[mid0];
+        const _n = _metaN && _metaN.f ? _metaN.f : 3;
+        f._tkw = { kind: 'n', mid: mid0, n: _n, l0: 0 };
+        f.lock = Math.max(20, Math.min(44, _n * 4 + 2));
+        f._tkw.l0 = f.lock;
+      }
+    }
+  }
   f.animT = 0; f._prevA = f.action; f.frame = 0;
   f.cool = 18;
   playSfxWhoosh(kickAttackName(type) ? 0.055 : 0.048);
@@ -2572,6 +3085,7 @@ function attack(f, type, power, range) {
 function special(f) {
   if (f.lock > 0.01 || f.meter < 25) return;
   f.meter -= 25;
+  f._tkw = null;
   const c = f.char;
   const other = (f === p1) ? p2 : p1;
 
@@ -2579,6 +3093,9 @@ function special(f) {
     // KADEN — Raging Palm: armored projectile palm wave
     f.action = 'special';
     f.lock = 38;
+    if (fightTkwUseInFight(f) && KADEN_TKW.s1) {
+      f._tkw = { kind: 's1', n: KADEN_TKW.s1.f, l0: 38 };
+    }
     f.armor = 1;
     projectiles.push({
       x: f.x + (f.flip ? -60 : 60), y: 430 + FLOOR_PROJ_DY,
@@ -2609,6 +3126,9 @@ function special(f) {
     f.action = 'special';
     f.lock = 22;
     f.iframes = 22;
+    if (fightTkwUseInFight(f) && HIKARI_TKW.s1) {
+      f._tkw = { kind: 's1', n: HIKARI_TKW.s1.f, l0: 22 };
+    }
     const dir = f.flip ? -1 : 1;
     f.x = Math.max(80, Math.min(1200, f.x + dir * 220));
     f.flip = f.x > other.x;
@@ -2617,10 +3137,13 @@ function special(f) {
     petals(f.x - dir * 80, 480 + FLOOR_PROJ_DY, '#ffb3d1');
   }
   else if (c === 3) {
-    // REN — Lotus Guard: open parry window
+    // REN — Lotus Guard: open parry window + Serene Deflection (s1) sheet
     f.action = 'special';
     f.lock = 30;
     f.parry = 30;
+    if (fightTkwUseInFight(f) && REN_TKW.s1) {
+      f._tkw = { kind: 's1', n: REN_TKW.s1.f, l0: 30 };
+    }
     spark(f.x, f.y - 110, '#7ec46b', 6);
   }
   else if (c === BOSS_INDEX) {
@@ -2635,10 +3158,13 @@ function special(f) {
       color: '#a855f7', power: Math.round(12 * phaseMul), size: 62, kind: 'shadow'
     });
   }
-  else {
-    // YUKI — Frost Slide: slow lingering ice projectile
+  else if (c === 4) {
+    // YUKI — Frost Slide + Judgment Throw (s1) sheet
     f.action = 'special';
     f.lock = 36;
+    if (fightTkwUseInFight(f) && YUKI_TKW.s1) {
+      f._tkw = { kind: 's1', n: YUKI_TKW.s1.f, l0: 36 };
+    }
     projectiles.push({
       x: f.x + (f.flip ? -60 : 60), y: 480 + FLOOR_PROJ_DY,
       vx: f.flip ? -4.5 : 4.5,
@@ -2653,6 +3179,11 @@ function superMove(f) {
   f.meter = 0;
   f.action = 'super';
   f.lock = 60;
+  f._tkw = null;
+  if (fightTkwUseInFight(f) && fightTkwDef(f.char | 0)) {
+    const dS = fightTkwDef(f.char | 0);
+    f._tkw = { kind: 's2', n: dS.s2.f, l0: 60 };
+  }
   const other = (f === p1) ? p2 : p1;
   const dist = Math.abs(f.x - other.x);
 
@@ -2975,6 +3506,7 @@ function physics(f, s) {
   if (f.lock > 0.01) f.lock = Math.max(0, f.lock - sc);
   if (f.lock < 0.01) f.lock = 0;
   if (f.lock <= 0) {
+    if ((f.char | 0) === 0 || (f.char | 0) === 1 || (f.char | 0) === 2 || (f.char | 0) === 3 || (f.char | 0) === 4) f._tkw = null;
     if (f.y < FLOOR_FIGHT_Y - 2) {
       f.action = 'jump';
     } else if (f.block) {
@@ -3310,16 +3842,19 @@ function meter(x, y, w, val, col) {
 }
 
 /**
- * ASTRA row1 (strikes) cell for an attack name — used for the “impact” frame of a melee swing.
+ * ASTRA row1 (strikes) for kicks / specials. Punches: use **row0 idle (0,0)** for melee
+ * so we never show rival-sheet col0/1, which the anim compositor fills from the same
+ * mid-strip frame (often a kick) for both jab and cross (see `generate_astra_rival_sheets.py`).
+ * Hand-tuned Kaden astra can use row1 in a future per-slot override.
  */
 function astraStrikeCellForAction(a) {
-  if (a === 'jab' || a === 'uppercut' || a === 'axe kick') return { col: 0, row: 1 };
-  if (a === 'cross' || a === 'hook' || a === 'palm' || a === 'side kick') return { col: 1, row: 1 };
+  if (isPunchTypeMelee(a)) return { col: 0, row: 0 };
   if (a === 'flick kick' || a === 'front kick' || a === 'low kick' || a === 'push kick') return { col: 2, row: 1 };
   if (a === 'round kick' || a === 'spin kick' || a === 'crescent kick' || a === 'back kick') return { col: 3, row: 1 };
+  if (a === 'axe kick' || a === 'side kick') return { col: 2, row: 1 };
   if (a === 'jump kick') return { col: 4, row: 0 };
   if (a && a.indexOf('kick') >= 0) return { col: 2, row: 1 };
-  return { col: 3, row: 1 };
+  return { col: 0, row: 0 };
 }
 /**
  * ASTRA sheet (Sprite Lab export): 1376×768, 2 rows × 5 cols.
@@ -3328,46 +3863,59 @@ function astraStrikeCellForAction(a) {
  */
 function getAstraFighterSheetClip(f) {
   const a = f.action || 'idle';
+  // One stable strike cell for the whole attack lock. Wind/hit/return phases cycled f.lock
+  // across 15/5 boundaries and flashed 3 very different 275×384 cells (visible “glitching”).
   if (f.lock > 0.01 && a !== 'frontflip' && a !== 'backflip' && a !== 'special' && a !== 'special-strike' && a !== 'super' && a !== 'victory') {
     if (isPunchTypeMelee(a) || isKickTypeMelee(a)) {
-      const rem = f.lock;
-      if (rem > 15) {
-        const cell = astraCell(0, 0);
-        return { astra: true, sx: cell.sx, sy: cell.sy, sw: cell.sw, sh: cell.sh, anim: a, label: a + ':wind', frame: Math.floor(f.frame) };
-      }
-      if (rem > 5) {
-        const st = astraStrikeCellForAction(a);
-        const cell = astraCell(st.col, st.row);
-        return { astra: true, sx: cell.sx, sy: cell.sy, sw: cell.sw, sh: cell.sh, anim: a, label: a + ':hit', frame: Math.floor(f.frame) };
-      }
-      const cellR = astraCell(1, 0);
-      return { astra: true, sx: cellR.sx, sy: cellR.sy, sw: cellR.sw, sh: cellR.sh, anim: a, label: a + ':rec', frame: Math.floor(f.frame) };
+      const st = astraStrikeCellForAction(a);
+      const cell = astraCell(st.col, st.row);
+      return { astra: true, sx: cell.sx, sy: cell.sy, sw: cell.sw, sh: cell.sh, anim: a, label: a + ':m', frame: Math.floor(f.frame) };
     }
   }
   let col = 0, row = 0, label = a;
-  if (a === 'frontflip' || a === 'backflip' || a === 'idle') { col = 0; row = 0; }
+  // Idle: alternate idle1 (col0) / idle2 (col1) so the fighter visibly breathes.
+  // Slowed by /4 so the sway reads as breathing, not jitter.
+  if (a === 'frontflip' || a === 'backflip' || a === 'idle') {
+    const ph = Math.floor(f.frame / 4) % 2;
+    col = ph; row = 0; label = 'idle:' + ph;
+  }
   else if (a === 'walk') {
     const ph = Math.floor(f.frame) % 2;
     col = 2 + ph; row = 0; label = 'walk:' + ph;
   }
   else if (a === 'jump') { col = 4; row = 0; }
-  else if (a === 'block' || a === 'crouch') { col = 0; row = 1; label = 'guard'; }
-  else if (a === 'hurt' || a === 'knockdown') { col = 1; row = 1; }
-  else if (a === 'super' || a === 'victory') { col = 4; row = 1; }
-  else if (a === 'special' || a === 'special-strike') { col = 3; row = 1; }
-  else if (a === 'jab' || a === 'uppercut' || a === 'axe kick') { col = 0; row = 1; }
-  else if (a === 'cross' || a === 'hook' || a === 'palm' || a === 'side kick') { col = 1; row = 1; }
+  // Block: subtle guard sway alternating idle/idle2 cells (sheet has no dedicated guard cell).
+  else if (a === 'block' || a === 'crouch') {
+    const ph = Math.floor(f.frame / 5) % 2;
+    col = ph; row = 0; label = 'guard:' + ph;
+  }
+  // Hurt: keep the dedicated hurt cell but tag the cache key per-frame so the flash/recoil flicker reads as motion.
+  else if (a === 'hurt' || a === 'knockdown') {
+    const ph = Math.floor(f.frame / 2) % 2;
+    col = 1; row = 1; label = 'hurt:' + ph;
+  }
+  // Super/victory: pulse cache key so chroma cache invalidates and the ASTRA strike pose visibly settles.
+  else if (a === 'super' || a === 'victory') {
+    const ph = Math.floor(f.frame / 3) % 2;
+    col = 4; row = 1; label = 'super:' + ph;
+  }
+  else if (a === 'special' || a === 'special-strike') {
+    const ph = Math.floor(f.frame / 3) % 2;
+    col = 3; row = 1; label = 'special:' + ph;
+  }
+  else if (isPunchTypeMelee(a)) { col = 0; row = 0; }
+  else if (a === 'axe kick' || a === 'side kick') { col = 2; row = 1; }
   else if (a === 'flick kick' || a === 'front kick' || a === 'low kick' || a === 'push kick') { col = 2; row = 1; }
   else if (a === 'round kick' || a === 'spin kick' || a === 'crescent kick' || a === 'back kick') { col = 3; row = 1; }
   else if (a === 'jump kick') { col = 4; row = 0; label = a; }
   else if (a && a.indexOf('kick') >= 0) { col = 2; row = 1; }
-  else { col = 3; row = 1; }
+  else { col = 0; row = 0; }
   const cell = astraCell(col, row);
   return { astra: true, sx: cell.sx, sy: cell.sy, sw: cell.sw, sh: cell.sh, anim: a, label, frame: Math.floor(f.frame) };
 }
 
 /**
- * Source rectangles: character_sheet.png, one row per fighter (y0+label strip).
+ * Source rectangles: `reigen_classic_row.png` (boss only) — one row, y0+label strip. Roster 0–4 use ASTRA.
  * third value = source width (px); source height = min(90, available row h) in draw, same as legacy.
  */
 function getFighterSheetClip(f) {
@@ -3410,7 +3958,7 @@ function isKickTypeMelee(a) {
  * read as body motion (lunge, lift, slight lean) even without multi-frame spritework.
  */
 function applyStrikeBodyMotion(ctx, f) {
-  if (!f || f.lock < 0.1) return;
+  if (!f || f.lock < TKW_LOCK_MIN) return;
   // Full ASTRA cells already show a wind-up / strike pose; extra translate+rotate reads as a sliding “card”.
   if (f.char != null && charHasAstraSheet(f.char | 0)) return;
   const a = f.action;
@@ -3435,7 +3983,12 @@ function applyStrikeBodyMotion(ctx, f) {
 function drawFighter(f) {
   const y0 = sheetRowTop(f.char);
   const hrow = sheetRowHeight(f.char);
-  let kadenPort = f.char === 0 && useKadenPortraitForAction() && kadenGameplay.complete && kadenGameplay.naturalWidth > 0;
+  // When ASTRA is loaded, use the same grid as character select (getFighterSheetClip + astra_*.png).
+  // Sticky `charHasAstraSheet` avoids flipping to FTKW strips when the Image briefly retries / decode races.
+  const useFtk = fightTkwUseInFight(f) && (state === 'fight' || state === 'roundover') && !charHasAstraSheet(f.char | 0);
+  let kadenPort = f.char === 0 && useKadenPortraitForAction() && kadenGameplay.complete && kadenGameplay.naturalWidth > 0 && !useFtk;
+  /** Single key for this draw’s sheet chroma (must match between bake + blit; avoids subtle key-string drift). */
+  let chromaKeyForDraw = '';
   let csw = 0, csh = 0, sh, sw0, sx0, sy0, cl, dw, dh, dx0, dy0, wSrc, hSrc;
   let srcImg = sheet;
   if (kadenPort) {
@@ -3453,73 +4006,148 @@ function drawFighter(f) {
     dx0 = (Math.round(-dw * 0.5) + walkSway) | 0;
     dy0 = (-dh) | 0;
   } else {
-    cl = getFighterSheetClip(f);
-    srcImg = (cl && cl.astra && charHasAstraSheet(f.char | 0)) ? (astraSheetForChar(f.char | 0) || sheet) : sheet;
-    if (cl.astra) {
-      sh = Math.max(1, cl.sh | 0);
-      sx0 = cl.sx | 0;
-      sy0 = cl.sy | 0;
-      sw0 = Math.max(1, cl.sw | 0);
+    if (useFtk) {
+      const r = tkwSrcForDraw(f);
+      // Use classic black-key chroma (keySheetChroma*), not ASTRA edge-flood — flood wipes taekwondo/wushu strips
+      // and only leaves bright title fragments from the sheet PNG.
+      cl = {
+        astra: false,
+        ftkw: true,
+        sx: r.sx, sy: r.sy, sw: r.sw, sh: r.sh,
+        anim: f.action,
+        label: 'ktw:' + r.sx + ',' + r.sy + ',' + r.sw + ',' + r.sh,
+        frame: tkwBaseFrame(f)
+      };
+      srcImg = fightTkwImageForChar(f.char | 0);
+      sh = r.sh; sx0 = r.sx; sy0 = r.sy; sw0 = r.sw;
     } else {
-      const syF = y0 + cl.yOff;
-      const maxH = (y0 + hrow) - syF;
-      sh = Math.max(1, Math.min(90, hrow - cl.yOff, maxH) | 0);
-      sx0 = cl.ix;
-      sy0 = (syF | 0);
-      sw0 = Math.max(1, cl.sw | 0);
+      cl = getFighterSheetClip(f);
+      srcImg = (cl && cl.astra && charHasAstraSheet(f.char | 0)) ? (astraSheetForChar(f.char | 0) || sheet) : sheet;
+      if (cl.astra) {
+        sh = Math.max(1, cl.sh | 0);
+        sx0 = cl.sx | 0;
+        sy0 = cl.sy | 0;
+        sw0 = Math.max(1, cl.sw | 0);
+      } else {
+        const syF = y0 + cl.yOff;
+        const maxH = (y0 + hrow) - syF;
+        sh = Math.max(1, Math.min(90, hrow - cl.yOff, maxH) | 0);
+        sx0 = cl.ix;
+        sy0 = (syF | 0);
+        sw0 = Math.max(1, cl.sw | 0);
+      }
     }
     // Chroma-key each frame: removes dark background box for SF6-style clean sprites
     // Important: cache key must include per-frame variants (e.g. walk:0 vs walk:1),
     // otherwise the wrong frame can be reused and the animation looks broken.
-    const _ck = f.char + ':' + (cl.astra ? 'a4:' : '') + String(cl.label != null ? cl.label : (cl.anim != null ? cl.anim : f.action));
+    const _chromaPfx = (cl && cl.astra) ? 'a4:' : ((cl && cl.ftkw) ? 'fS:' : '');
+    const _ck = f.char + ':' + _chromaPfx + String(cl.label != null ? cl.label : (cl.anim != null ? cl.anim : f.action));
+    chromaKeyForDraw = _ck;
     if (!_chromaCache.has(_ck)) {
       if (_chromaCache.size >= _CHROMA_CACHE_MAX) _chromaCache.delete(_chromaCache.keys().next().value);
       const _cc = document.createElement('canvas');
       _cc.width = sw0; _cc.height = sh;
-      const _cx = _cc.getContext('2d');
+      const _cx = _cc.getContext('2d', { willReadFrequently: true });
       if (_cx) {
         applyCtxImageSmoothingOff(_cx);
         _cx.drawImage(srcImg, sx0, sy0, sw0, sh, 0, 0, sw0, sh);
-        const _id = _cx.getImageData(0, 0, sw0, sh);
-        if (cl.astra) {
-          keyAstraFloodKeyBackground(_id.data, sw0, sh);
-        } else {
-          keySheetChromaToTransparent(_id.data);
+        let outCanvas = _cc;
+        let ftkwSkipTrim = false;
+        try {
+          const _id = _cx.getImageData(0, 0, sw0, sh);
+          const _rawCopy = new Uint8ClampedArray(_id.data);
+          if (cl.astra) {
+            keyAstraFloodKeyBackground(_id.data, sw0, sh);
+            if (sheetChromaGoneTooFar(_id.data, sw0, sh, true)) _id.data.set(_rawCopy);
+          } else {
+            keySheetChromaToTransparent(_id.data);
+            if (cl.ftkw) keySheetChromaDespeckle(_id.data, sw0, sh);
+            if (sheetChromaGoneTooFar(_id.data, sw0, sh, false)) {
+              _id.data.set(_rawCopy);
+              ftkwSkipTrim = !!cl.ftkw;
+            }
+          }
+          _cx.putImageData(_id, 0, 0);
+          if (cl.ftkw && !ftkwSkipTrim) {
+            try {
+              outCanvas = trimFtkwChromaToCharacter(_cc);
+            } catch (_) {
+              outCanvas = _cc;
+            }
+          }
+        } catch (_secErr) {
+          // getImageData blocked (file:// / taint) — keep raster from drawImage; no key
         }
-        _cx.putImageData(_id, 0, 0);
-        _chromaCache.set(_ck, _cc);
-        const _ol = makeOutlineCanvas(_cc, 2);
+        _chromaCache.set(_ck, outCanvas);
+        const _ol = makeOutlineCanvas(outCanvas, 2);
         if (_ol) _outlineCache.set(_ck, _ol);
         if (KFR_SF6_RIM) {
           const c0 = characters && characters[f.char] && characters[f.char].color ? String(characters[f.char].color) : '#ffffff';
-          const _rim = makeRimCanvas(_cc, c0, 3);
+          const _rim = makeRimCanvas(outCanvas, c0, 3);
           if (_rim) _rimCache.set(_ck, _rim);
         }
       }
     }
     const _cachedFr = _chromaCache.get(_ck);
+    let blitW = sw0, blitH = sh;
+    if (cl && cl.ftkw && _cachedFr) {
+      blitW = Math.max(1, _cachedFr.width | 0);
+      blitH = Math.max(1, _cachedFr.height | 0);
+    }
     csw = 0; csh = 0; // keep 0 so sheet.complete branch runs as fallback
-    wSrc = sw0;    hSrc = sh;
+    wSrc = blitW;    hSrc = blitH;
     // Legacy rows clip at ~90px tall; ASTRA cells are 384px — width-only _frameCap made fighters ~3× too tall.
-    const _capW = 1050 / (sw0 * SPRITE_SCALE);
-    const _rowRefH = (cl && cl.astra) ? KADEN_TARGET_ROW_REF : 90;
-    const _capH = (_rowRefH * FIGHTER_DRAW_SCALE) / sh;
-    const _frameCap = Math.min(FIGHTER_DRAW_SCALE, _capW, _capH);
-    dw = Math.round(sw0 * SPRITE_SCALE * _frameCap);
-    dh = Math.round(sh * SPRITE_SCALE * _frameCap);
+    // ftkw: use alpha-trimmed size so the visible body fills the on-screen cap (SF-style, not a big empty cell).
+    const _capW = 1050 / (blitW * SPRITE_SCALE);
+    const _rowRefH = (cl && (cl.astra || cl.ftkw)) ? KADEN_TARGET_ROW_REF : 90;
+    const _capH = (_rowRefH * FIGHTER_DRAW_SCALE) / blitH;
+    const FTKW_SCREEN_PRESENCE = 1.1;
+    const _ftkwBoost = (cl && cl.ftkw) ? FTKW_SCREEN_PRESENCE : 1;
+    const _frameCap = Math.min(FIGHTER_DRAW_SCALE * _ftkwBoost, _capW, _capH);
+    dw = Math.round(blitW * SPRITE_SCALE * _frameCap);
+    dh = Math.round(blitH * SPRITE_SCALE * _frameCap);
     if (!srcImg.complete) console.warn('[KadenFighters] sprite sheet not ready; using placeholder blit');
     dx0 = (Math.round(-dw * 0.5) + 0) | 0;
     dy0 = (-dh) | 0;
+  }
+
+  {
+    let sm = 'other';
+    if (kadenPort) sm = 'kaden-port';
+    else if (useFtk) sm = 'ftkw';
+    else if (cl && cl.astra && charHasAstraSheet(f.char | 0)) sm = 'astra';
+    else sm = 'legacy';
+    if (state === 'fight' || state === 'roundover') {
+      const prev = _fighterSpriteModeLast.get(f);
+      if (prev === 'astra' && (sm === 'ftkw' || sm === 'legacy')) {
+        console.warn('[KadenFighters] sprite NEW→OLD: ASTRA → ' + sm, {
+          char: f.char,
+          name: (characters[f.char] && characters[f.char].name) || '?',
+          state: state,
+          action: f.action,
+          useFtk: useFtk,
+          charHasAstraSheet: charHasAstraSheet(f.char | 0)
+        });
+      } else if (KADEN_SPRITE_MODE_TRACE && prev != null && prev !== sm) {
+        console.log('[KadenFighters] sprite mode', prev, '→', sm, { char: f.char, action: f.action, state: state });
+      }
+      _fighterSpriteModeLast.set(f, sm);
+    }
   }
 
   ctx.save();
   const xDraw = Math.round(f.x);
   const yDraw = Math.round(f.y);
   ctx.translate(xDraw, yDraw);
+  // Default: side-view is drawn “right” in texture; f.flip → ctx.scale(-1,1) so both face mid-screen.
+  // ?astraMirror=1 inverts to !f.flip for ASTRA-only (some Sprite Lab exports face the other way).
+  const astraL = charHasAstraSheet(f.char | 0);
+  const astraInvert = astraL && (typeof location !== 'undefined' && String(location.search || '').indexOf('astraMirror=1') >= 0);
+  const hMirror = astraInvert ? !f.flip : f.flip;
   // Super/victory animations have baked-in directional art (text, effects that read L→R).
   // Don't mirror these frames so the art always displays correctly.
-  const _skipFlip = (f.action === 'super' || f.action === 'victory');
-  if (f.flip && !_skipFlip) ctx.scale(-1, 1);
+  const _skipFlip = (f.action === 'super' || f.action === 'victory') && !useFtk;
+  if (hMirror && !_skipFlip) ctx.scale(-1, 1);
 
   if (f.action === 'frontflip' || f.action === 'backflip') {
     const u = 1 - f.lock / FIGHTER_FLIP_FRAMES;
@@ -3561,16 +4189,18 @@ function drawFighter(f) {
     else ctx.drawImage(_chromaCanvas, 0, 0, csw, csh, dxI, dyI, dw, dh);
   } else if (srcImg.complete && srcImg.naturalWidth > 0) {
     if ('filter' in ctx) ctx.filter = 'none';
-  {const _ck2=f.char+':'+(cl&&cl.astra?'a4:':'')+String(cl?(cl.label!=null?cl.label:cl.anim):f.action);const _cfd=_chromaCache&&_chromaCache.get(_ck2);const _olf=_outlineCache&&_outlineCache.get(_ck2);const _rim=_rimCache&&_rimCache.get(_ck2);
-    if(_rim&&KFR_SF6_RIM){ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha=0.26;ctx.drawImage(_rim,0,0,_rim.width,_rim.height,dxI-3,dyI-3,dw+6,dh+6);ctx.restore();}
-    if(_olf){ctx.globalAlpha=0.95;ctx.drawImage(_olf,0,0,_olf.width,_olf.height,dxI-2,dyI-2,dw+4,dh+4);ctx.globalAlpha=1;}
-    if(_cfd){ctx.drawImage(_cfd,0,0,sw0,sh,dxI,dyI,dw,dh);}else{ctx.drawImage(srcImg,sx0,sy0,sw0,sh,dxI,dyI,dw,dh);}
-    // Value lift should affect the sprite only (not a rectangle “card” behind it).
-    if(KFR_SF6_VALUE_LIFT&&_cfd){ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha=0.07;ctx.drawImage(_cfd,0,0,sw0,sh,dxI,dyI,dw,dh);ctx.restore();}
+  {const _kDraw=chromaKeyForDraw||(f.char+':'+((cl&&cl.astra)?'a4:':(cl&&cl.ftkw)?'fS:':'')+String((cl&&cl.label!=null)?cl.label:((cl&&cl.anim!=null)?cl.anim:f.action)));
+    const _cfd=_chromaCache&&_kDraw&&_chromaCache.get(_kDraw);const _olf=_outlineCache&&_kDraw&&_outlineCache.get(_kDraw);const _rim=_rimCache&&_kDraw&&_rimCache.get(_kDraw);
+    const _cw=_cfd?(_cfd.width|0):sw0, _ch=_cfd?(_cfd.height|0):sh;
+    const _astraNoFx=cl&&cl.astra;
+    if(_rim&&KFR_SF6_RIM&&!_astraNoFx){ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha=0.26;ctx.drawImage(_rim,0,0,_rim.width,_rim.height,dxI-3,dyI-3,dw+6,dh+6);ctx.restore();}
+    if(_olf&&!_astraNoFx){ctx.globalAlpha=0.95;ctx.drawImage(_olf,0,0,_olf.width,_olf.height,dxI-2,dyI-2,dw+4,dh+4);ctx.globalAlpha=1;}
+    if(_cfd){ctx.drawImage(_cfd,0,0,_cw,_ch,dxI,dyI,dw,dh);}else{ctx.drawImage(srcImg,sx0,sy0,sw0,sh,dxI,dyI,dw,dh);}
+    if(KFR_SF6_VALUE_LIFT&&_cfd&&!_astraNoFx){ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha=0.07;ctx.drawImage(_cfd,0,0,_cw,_ch,dxI,dyI,dw,dh);ctx.restore();}
   }
     // Fix: the super/victory frame has 'SPECIAL MOVE' text baked-in reversed in the source art.
     // Overdraw it with correctly-oriented canvas text so it always reads left-to-right.
-    if (f.action === 'super' || f.action === 'victory') {
+    if (!useFtk && (f.action === 'super' || f.action === 'victory')) {
       const _ow = Math.min(dw * 0.75, 380); // narrower so it stays on canvas
       const _ox = -(_ow * 0.5);
       const _oy = -(dh * 0.78); // slightly lower to center better
@@ -3617,9 +4247,9 @@ function drawFighter(f) {
       if (kadenPort) ctx.drawImage(_kadenBaked, 0, 0, csw, csh, dxI, dyI, dw, dh);
       else ctx.drawImage(_chromaCanvas, 0, 0, csw, csh, dxI, dyI, dw, dh);
     } else if (srcImg.complete && srcImg.naturalWidth > 0) {
-      const _kFlash = f.char + ':' + (cl && cl.astra ? 'a4:' : '') + String(cl ? (cl.label != null ? cl.label : cl.anim) : f.action);
-      const _cfL = _chromaCache.get(_kFlash);
-      if (_cfL) ctx.drawImage(_cfL, 0, 0, sw0, sh, dxI, dyI, dw, dh);
+      const _kFlash = chromaKeyForDraw || (f.char + ':' + ((cl && cl.astra) ? 'a4:' : (cl && cl.ftkw) ? 'fS:' : '') + String(cl ? (cl.label != null ? cl.label : (cl.anim != null ? cl.anim : f.action)) : f.action));
+      const _cfL = _kFlash && _chromaCache.get(_kFlash);
+      if (_cfL) ctx.drawImage(_cfL, 0, 0, _cfL.width | 0, _cfL.height | 0, dxI, dyI, dw, dh);
       else ctx.drawImage(srcImg, sx0, sy0, sw0, sh, dxI, dyI, dw, dh);
     }
     ctx.restore();
@@ -3894,6 +4524,8 @@ function endScreen(win) {
     const ox2 = ix2 + (((tw2 - dw3) * 0.5) | 0), oy2 = iy2 + (th2 - dh3);
     applyCtxImageSmoothingOff(ctx);
     ctx.drawImage(kadenGameplay, 0, 0, aw2, ah2, ox2, oy2, dw3, dh3);
+  } else if (charHasAstraSheet(speaker | 0)) {
+    drawAstraCellKeyedInBox(ctx, speaker | 0, 0, 0, 145, 385, 180, 250, { vertical: 'bottom', scaleMult: 1.08 });
   } else {
     ctx.drawImage(sheet, 246, py, 109, ph, 145, 385, 180, 250);
   }
@@ -3974,7 +4606,7 @@ function prebakeAllSheetFrames() {
       const key=char+':'+anim;
       if(!_chromaCache.has(key)){
         const cc=document.createElement('canvas');cc.width=sw;cc.height=sh;
-        const cx=cc.getContext('2d');
+        const cx=cc.getContext('2d',{willReadFrequently:true});
         if(cx){applyCtxImageSmoothingOff(cx);cx.drawImage(sheet,ix,y0+22,sw,sh,0,0,sw,sh);
           const id=cx.getImageData(0,0,sw,sh);keySheetChromaToTransparent(id.data);
           cx.putImageData(id,0,0);_chromaCache.set(key,cc);}
@@ -3984,7 +4616,7 @@ function prebakeAllSheetFrames() {
   for (let ac = 0; ac < astraFighterSheets.length; ac++) {
     if (charHasAstraSheet(ac)) prebakeAstraFighterFrames(ac);
   }
-  console.log('[KF] Prebaked',_chromaCache.size,'sprite frames');
+  if (KADEN_DEBUG) console.log('[KF] Prebaked', _chromaCache.size, 'sprite frames');
 }
 /** Warm chroma cache for one fighter’s ASTRA sheet (Sprite Lab export, same pipeline as gameplay). */
 function prebakeAstraFighterFrames(charIdx) {
@@ -4006,7 +4638,7 @@ function prebakeAstraFighterFrames(charIdx) {
     if (_chromaCache.size >= _CHROMA_CACHE_MAX) _chromaCache.delete(_chromaCache.keys().next().value);
     const _cc = document.createElement('canvas');
     _cc.width = sw0; _cc.height = sh;
-    const _cx = _cc.getContext('2d');
+    const _cx = _cc.getContext('2d', { willReadFrequently: true });
     if (!_cx) continue;
     applyCtxImageSmoothingOff(_cx);
     _cx.drawImage(src, sx0, sy0, sw0, sh, 0, 0, sw0, sh);

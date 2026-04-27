@@ -3,6 +3,10 @@
   "private": true,
   "version": "1.0.0",
   "description": "Kaden Fighter — static HTML canvas game for Vercel",
+  "scripts": {
+    "start": "python3 -m http.server 8765",
+    "verify:sprites": "bash scripts/sprite-asset-smoke.sh"
+  },
   "engines": {
     "node": ">=18"
   },

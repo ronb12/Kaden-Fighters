@@ -70,7 +70,7 @@
         <strong>ASTRA</strong> layout as Kaden: <code>1376×768</code>, <code>2×5</code> cells (see grid below). Ship sheets in
         <code>assets/</code> as <code>astra_fighter_sheet.png</code> (Kaden) and <code>astra_raijin.png</code> … <code>astra_yuki.png</code>.
         For <strong>full hand-painted parity</strong> with Kaden, paint all ten cells in your art tool, export a single
-        1376×768 PNG per fighter, then bump <code>ASTRA_ASSET_VER</code> in <code>js/kfr-game.js</code> + <code>index.html</code> and deploy; see the top of <code>scripts/generate_astra_rival_sheets.py</code> for the exact grid. To rebuild rivals from the legacy <code>*_anim.png</code> strips instead, run: <code>python3 scripts/generate_astra_rival_sheets.py</code> (overwrites the four rival ASTRA files). You can also load a local PNG below.
+        1376×768 PNG per fighter, then bump <code>ASTRA_ASSET_VER</code> in <code>js/kfr-game.js</code> + <code>index.html</code> and deploy; see the top of <code>scripts/generate_astra_rival_sheets.py</code> for the exact grid and optional anim-strip compositing. You can also load a local PNG below.
       </div>
 
       <h2>Source</h2>
@@ -81,12 +81,7 @@
         <option value="assets/astra_hikari.png" data-preset="astra">ASTRA — Hikari (astra_hikari.png)</option>
         <option value="assets/astra_ren.png" data-preset="astra">ASTRA — Ren (astra_ren.png)</option>
         <option value="assets/astra_yuki.png" data-preset="astra">ASTRA — Yuki (astra_yuki.png)</option>
-        <option value="assets/character_sheet.png">assets/character_sheet.png</option>
-        <option value="assets/kaden_anim.png">assets/kaden_anim.png</option>
-        <option value="assets/raijin_anim.png">assets/raijin_anim.png</option>
-        <option value="assets/hikari_anim.png">assets/hikari_anim.png</option>
-        <option value="assets/ren_anim.png">assets/ren_anim.png</option>
-        <option value="assets/yuki_anim.png">assets/yuki_anim.png</option>
+        <option value="assets/reigen_classic_row.png">Boss row (reigen_classic_row.png)</option>
       </select>
       <label for="filePick" class="muted" style="display:block;margin-top:10px">Load local sheet (Raijin / Hikari ASTRA, etc. — avoids 404s for files not in <code>assets/</code> yet)</label>
       <input type="file" id="filePick" accept="image/png,image/jpeg,image/webp" style="max-width:100%;margin-top:4px" />
@@ -384,7 +379,7 @@
     }
 
     function resetDefaults() {
-      srcPreset.value = 'assets/character_sheet.png';
+      srcPreset.value = 'assets/astra_fighter_sheet.png';
       sxEl.value = 364; syEl.value = 22; swEl.value = 42; shEl.value = 90;
       scaleEl.value = 6;
       doKeyEl.checked = true;
