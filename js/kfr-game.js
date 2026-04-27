@@ -147,8 +147,8 @@ sheet.src = 'assets/character_sheet.png';
  * One optional PNG per roster index. Use a string path only when the file exists in `assets/`
  * (otherwise the site 404s). `null` = use classic `character_sheet.png` row for that fighter.
  * Example: `null, 'assets/astra_raijin.png', null, null, null` after you add the PNG.
- * Kaden: hand-tuned `astra_fighter_sheet.png`. Rivals: `astra_raijin.png` … (Sprite Lab layout; can be
- * replaced with polished exports). Regenerate placeholders: `python3 scripts/generate_astra_rival_sheets.py`
+ * Kaden: hand-tuned `astra_fighter_sheet.png`. Rivals: programmatic Japanese budō outfits per fighter
+ * (see `scripts/generate_astra_rival_sheets.py`); replace with Sprite Lab exports whenever you want final art.
  */
 function resolveAssetPath(rel) {
   if (!rel) return rel;
@@ -161,7 +161,7 @@ function resolveAssetPath(rel) {
   return rel;
 }
 /** Busts long-lived /assets/* immutable cache if sheet bytes change; keep in sync with index.html if preloaded. */
-const ASTRA_ASSET_VER = '10';
+const ASTRA_ASSET_VER = '11';
 const ASTRA_FIGHTER_SHEET_SRC = [
   `assets/astra_fighter_sheet.png?v=${ASTRA_ASSET_VER}`,
   `assets/astra_raijin.png?v=${ASTRA_ASSET_VER}`,
