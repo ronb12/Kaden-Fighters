@@ -162,7 +162,7 @@ function resolveAssetPath(rel) {
   return rel;
 }
 /** Busts long-lived /assets/* immutable cache if sheet bytes change; keep in sync with index.html if preloaded. */
-const ASTRA_ASSET_VER = '12';
+const ASTRA_ASSET_VER = '13';
 const ASTRA_FIGHTER_SHEET_SRC = [
   `assets/astra_fighter_sheet.png?v=${ASTRA_ASSET_VER}`,
   `assets/astra_raijin.png?v=${ASTRA_ASSET_VER}`,

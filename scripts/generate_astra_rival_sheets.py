@@ -7,6 +7,9 @@ Default pipeline (this script)
 Composites `assets/raijin_anim.png` … `yuki_anim.png` into the ASTRA grid. Running it
 **overwrites** the four `astra_*.png` rival sheets—skip it if you are shipping hand art.
 
+Raijin from author PNGs: run `python3 scripts/compose_raijin_user_astra.py` (uses
+`assets/raijin_concept/*`) to rebuild `assets/astra_raijin.png` from reference art.
+
 Hand export spec — true 10/10 parity with Kaden (`astra_fighter_sheet.png`)
 ----------------------------------------------------------------------------
 1. **Canvas** — Exactly **1376×768** px, PNG, under `assets/`.
