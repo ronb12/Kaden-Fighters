@@ -160,14 +160,18 @@ function resolveAssetPath(rel) {
   }
   return rel;
 }
+/** Busts long-lived /assets/* immutable cache if sheet bytes change; keep in sync with index.html if preloaded. */
+const ASTRA_ASSET_VER = '10';
 const ASTRA_FIGHTER_SHEET_SRC = [
-  'assets/astra_fighter_sheet.png',
-  'assets/astra_raijin.png',
-  'assets/astra_hikari.png',
-  'assets/astra_ren.png',
-  'assets/astra_yuki.png',
+  `assets/astra_fighter_sheet.png?v=${ASTRA_ASSET_VER}`,
+  `assets/astra_raijin.png?v=${ASTRA_ASSET_VER}`,
+  `assets/astra_hikari.png?v=${ASTRA_ASSET_VER}`,
+  `assets/astra_ren.png?v=${ASTRA_ASSET_VER}`,
+  `assets/astra_yuki.png?v=${ASTRA_ASSET_VER}`,
 ];
-const astraFighterSheets = ASTRA_FIGHTER_SHEET_SRC.map((src) => {
+const astraFighterSheets = [];
+for (let si = 0; si < ASTRA_FIGHTER_SHEET_SRC.length; si++) {
+  const src = ASTRA_FIGHTER_SHEET_SRC[si];
   const im = new Image();
   if (src) {
     im.src = resolveAssetPath(src);
@@ -175,8 +179,8 @@ const astraFighterSheets = ASTRA_FIGHTER_SHEET_SRC.map((src) => {
       if (KADEN_DEBUG) console.warn('[KadenFighters] ASTRA sheet failed to load:', src, im.naturalWidth);
     });
   }
-  return im;
-});
+  astraFighterSheets.push(im);
+}
 function astraSheetForChar(c) {
   const ci = c | 0;
   if (ci < 0 || ci > 4) return null; // roster slots 0–4 only (not final boss 5+)
@@ -417,9 +421,13 @@ function _prepareAstraMenuCellFrom(sheetImg, col, row) {
   }
   _menuAstraTmpCtx.clearRect(0, 0, sw, sh);
   _menuAstraTmpCtx.drawImage(sheetImg, ac.sx, ac.sy, sw, sh, 0, 0, sw, sh);
-  const mid = _menuAstraTmpCtx.getImageData(0, 0, sw, sh);
-  keyAstraFloodKeyBackground(mid.data, sw, sh);
-  _menuAstraTmpCtx.putImageData(mid, 0, 0);
+  try {
+    const mid = _menuAstraTmpCtx.getImageData(0, 0, sw, sh);
+    keyAstraFloodKeyBackground(mid.data, sw, sh);
+    _menuAstraTmpCtx.putImageData(mid, 0, 0);
+  } catch (_) {
+    /* Taint or security: use unkeyed mat (roster may show checker) */
+  }
   return [sw, sh];
 }
 /**
@@ -450,9 +458,12 @@ function _drawAstraKeyedSrcCover(tctx, sheetImg, col, row, sx, sy, ssw, ssh, box
 }
 /**
  * ASTRA top row: [bust crop | name + kanji | mini stance] — one keyed cell from this fighter’s Sprite Lab sheet.
+ * `slot` is roster index 0–4; the sheet is always taken from `astraFighterSheets[slot]` (never a captured Image).
  */
-function drawAstraRosterTopBanner(tctx, sheetImg, c, col, row, boxX, boxY, boxW, boxH) {
+function drawAstraRosterTopBanner(tctx, slot, c, col, row, boxX, boxY, boxW, boxH) {
   if (!tctx) return;
+  const sheetImg = astraFighterSheets[slot | 0];
+  if (!sheetImg) return;
   const dim = _prepareAstraMenuCellFrom(sheetImg, col, row);
   const sw = dim[0] | 0, sh = dim[1] | 0;
   if (sw < 1 || sh < 1) return;
@@ -493,8 +504,10 @@ function drawAstraRosterTopBanner(tctx, sheetImg, c, col, row, boxX, boxY, boxW,
 /**
  * ASTRA roster slots: key the cell, then cover + clip. opts: { scaleMult, vertical: 'bottom' | 'center' }
  */
-function drawAstraCellKeyedInBox(tctx, sheetImg, col, row, boxX, boxY, boxW, boxH, opts) {
+function drawAstraCellKeyedInBox(tctx, slot, col, row, boxX, boxY, boxW, boxH, opts) {
   if (!tctx) return;
+  const sheetImg = astraFighterSheets[slot | 0];
+  if (!sheetImg) return;
   const o = opts && typeof opts === 'object' ? opts : {};
   const vertical = o.vertical === 'center' ? 'center' : 'bottom';
   const scaleMult = typeof o.scaleMult === 'number' && o.scaleMult > 0 ? o.scaleMult : 1;
@@ -2314,7 +2327,12 @@ function characterSelect() {
   ctx.clearRect(0, 0, 1280, 720);
   drawCharacterSelectHeaderBar();
   const rl = ROSTER_LAYOUT;
-  characters.slice(0, SELECTABLE_COUNT).forEach((c, i) => {
+  for (let i = 0; i < SELECTABLE_COUNT; i++) {
+    const c = characters[i];
+    if (!c) break;
+    const rIdx = (c.row != null ? (c.row | 0) : i);
+    const syRow = (rIdx >= 0 && rIdx < rowY.length) ? rowY[rIdx] : rowY[i];
+    const shRow = (rIdx >= 0 && rIdx < rowH.length) ? rowH[rIdx] : rowH[i];
     const x = rosterCardLeft(i);
     const cx = rosterCardCenterX(i);
     const strip = rosterCardStripRect(i);
@@ -2322,22 +2340,21 @@ function characterSelect() {
     ctx.strokeStyle = i === sel ? '#fff' : c.color;
     ctx.lineWidth = i === sel ? 6 : 3;
     ctx.strokeRect(x, rl.topY, rl.cardW, rl.cardH);
-    const astraIm = astraSheetForChar(i);
     const hasAstra = charHasAstraSheet(i);
     if (hasAstra) {
-      drawAstraRosterTopBanner(ctx, astraIm, c, 0, 0, strip.x, strip.y, strip.w, strip.h);
+      drawAstraRosterTopBanner(ctx, i, c, 0, 0, strip.x, strip.y, strip.w, strip.h);
     } else if (i === 0 && useKadenHdMenuPortrait()) {
       drawKadenMenuImageCoverClipped(ctx, kadenGameplay, strip.x, strip.y, strip.w, strip.h, { vertical: 'center', scaleMult: 1.04 });
     } else {
-      ctx.drawImage(sheet, 0, rowY[i], 355, rowH[i], strip.x, strip.y, strip.w, strip.h);
+      ctx.drawImage(sheet, 0, syRow, 355, shRow, strip.x, strip.y, strip.w, strip.h);
     }
     if (hasAstra) {
       // Bottom-align + cover: center was cropping feet on tall ASTRA cells; feet read as the “ground” line on the card.
-      drawAstraCellKeyedInBox(ctx, astraIm, 0, 0, port.x, port.y, port.w, port.h, { vertical: 'bottom', scaleMult: 1.12 });
+      drawAstraCellKeyedInBox(ctx, i, 0, 0, port.x, port.y, port.w, port.h, { vertical: 'bottom', scaleMult: 1.12 });
     } else if (i === 0 && useKadenHdMenuPortrait()) {
       drawKadenMenuImageCoverClipped(ctx, kadenGameplay, port.x, port.y, port.w, port.h, { vertical: 'bottom', scaleMult: 1.12 });
     } else {
-      ctx.drawImage(sheet, 246, rowY[i], 109, rowH[i], port.x, port.y, port.w, port.h);
+      ctx.drawImage(sheet, 246, syRow, 109, shRow, port.x, port.y, port.w, port.h);
     }
     if (i === 0 && !hasAstra) {
       const my1 = (strip.y + strip.h * 0.4) | 0;
@@ -2379,7 +2396,7 @@ function characterSelect() {
     const desc = c.specialDesc;
     drawText(desc, cx, yDesc, rl.fontDesc, '#bbb', 'center');
     drawText('SU: ' + c.super, cx, ySu, rl.fontSu, '#ff8888', 'center');
-  });
+  }
   drawCharacterSelectFooterBar();
 }
 
