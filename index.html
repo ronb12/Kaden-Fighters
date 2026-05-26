@@ -2,36 +2,52 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
 <title>Kaden Fighters: Rise of Reigen</title>
 <meta name="theme-color" content="#7d0e0e"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-title" content="Kaden Fighters"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3565666509316178" crossorigin="anonymous"></script>
 <link rel="manifest" href="/site.webmanifest"/>
 <link rel="icon" href="/favicon.ico" sizes="any"/>
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"/>
 <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png"/>
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"/>
 <link rel="stylesheet" href="css/kfr-app.css"/>
+<link rel="stylesheet" href="css/top-tier-upgrades.css"/>
 <!-- Boot + fight move sheets (sync ?v= with ASTRA_ASSET_VER in js/kfr-game.js). crossorigin=anonymous must match Image.crossOrigin so preload reuses the same fetch. -->
-<link rel="preload" as="image" href="assets/reigen_classic_row.png?v=51" crossorigin="anonymous" fetchpriority="low"/>
-<link rel="preload" as="image" href="assets/kaden_taekwondo_sheet.png?v=51" crossorigin="anonymous" fetchpriority="high"/>
-<link rel="preload" as="image" href="assets/raijin_taekwondo_sheet.png?v=51" crossorigin="anonymous" fetchpriority="high"/>
-<link rel="preload" as="image" href="assets/hikari_wushu_sheet.png?v=51" crossorigin="anonymous" fetchpriority="high"/>
-<link rel="preload" as="image" href="assets/ren_aikido_sheet.png?v=51" crossorigin="anonymous" fetchpriority="high"/>
-<link rel="preload" as="image" href="assets/yuki_judo_sheet.png?v=51" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/reigen_classic_row.png?v=53" crossorigin="anonymous" fetchpriority="low"/>
+<link rel="preload" as="image" href="assets/generated/astra_kaden_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_raijin_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_hikari_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_ren_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_yuki_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_marcus_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_aiko_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_luna_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_dante_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_sari_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
 </head>
 <body>
+<nav class="site-nav site-nav--game" aria-label="App pages">
+  <a class="site-nav__brand" href="index.html" aria-current="page">Kaden Fighters</a>
+  <a class="site-nav__link" href="characters.html">Fighters</a>
+  <a class="site-nav__link" href="stages.html">Stages</a>
+  <a class="site-nav__link" href="controls.html">Controls</a>
+  <a class="site-nav__link" href="leaderboard.html">Ranks</a>
+  <a class="site-nav__link" href="privacy.html">Privacy</a>
+</nav>
 <div id="wrap">
   <div id="gameShell" role="application" aria-label="Kaden Fighters: Rise of Reigen">
     <canvas id="game" width="1280" height="720" tabindex="0" title="Kaden Fighters: click or tap here if controls don’t respond"></canvas>
     <div id="mobileControls">
   <div class="mc-dpad" id="mcDpad">
-    <div class="mc-dpad-btn mc-left" data-key="arrowleft">&lt;</div>
-    <div class="mc-dpad-btn mc-right" data-key="arrowright">&gt;</div>
-    <div class="mc-dpad-btn mc-up" data-key="arrowup">^</div>
-    <div class="mc-dpad-btn mc-down" data-key="arrowdown">v</div>
+    <div class="mc-dpad-btn mc-left" data-key="arrowleft">&#8592;</div>
+    <div class="mc-dpad-btn mc-right" data-key="arrowright">&#8594;</div>
+    <div class="mc-dpad-btn mc-up" data-key="arrowup">&#8593;</div>
+    <div class="mc-dpad-btn mc-down" data-key="arrowdown">&#8595;</div>
     <div class="mc-center"></div>
   </div>
   <div class="mc-actions">
@@ -184,6 +200,7 @@
 <script src="js/main-menu.js?v=9"></script>
 <script src="js/leaderboardData.js?v=9"></script>
 <script src="js/leaderboard-screen.js?v=9"></script>
-<script src="js/kfr-game.js?v=53"></script>
+<script src="js/kfr-game.js?v=62"></script>
+<script src="js/top-tier-upgrades.js"></script>
 </body>
 </html>

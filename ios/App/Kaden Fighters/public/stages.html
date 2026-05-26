@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Stages - Kaden Fighters: Rise of Reigen</title>
+<meta name="theme-color" content="#7d0e0e"/>
+<link rel="manifest" href="/site.webmanifest"/>
+<link rel="icon" href="/favicon.ico" sizes="any"/>
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"/>
+<link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png"/>
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"/>
+<link rel="stylesheet" href="css/kfr-app.css"/>
+</head>
+<body class="page-shell" style="--page-hero:url('assets/generated/country-stages-preview.jpg')">
+<nav class="site-nav" aria-label="App pages">
+  <a class="site-nav__brand" href="index.html">Kaden Fighters</a>
+  <a class="site-nav__link" href="characters.html">Fighters</a>
+  <a class="site-nav__link" href="stages.html" aria-current="page">Stages</a>
+  <a class="site-nav__link" href="controls.html">Controls</a>
+  <a class="site-nav__link" href="leaderboard.html">Ranks</a>
+  <a class="site-nav__link" href="privacy.html">Privacy</a>
+</nav>
+<main class="info-page">
+  <section class="page-hero" aria-labelledby="stagesTitle">
+    <div>
+      <p class="page-kicker">World Circuit</p>
+      <h1 class="page-title" id="stagesTitle">Fight Across Eight Countries</h1>
+      <p class="page-copy">The game now rotates through country stages with generated fight backdrops, giving tournament rounds a stronger sense of place.</p>
+      <div class="page-actions">
+        <a class="page-button" href="index.html">Play</a>
+        <a class="page-button page-button--ghost" href="characters.html">Roster</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="stage-strip" aria-label="Stage preview">
+    <div class="stage-preview"><img src="assets/generated/country-stages-preview.jpg?v=53" alt="Preview of Kaden Fighters country stages"/></div>
+    <div class="page-band" style="margin-top:0">
+      <h2>Countries</h2>
+      <ul class="control-list">
+        <li><span>Japan</span><kbd>Round 1</kbd></li>
+        <li><span>Brazil</span><kbd>Round 2</kbd></li>
+        <li><span>Egypt</span><kbd>Boss</kbd></li>
+        <li><span>Kenya</span><kbd>Round 4</kbd></li>
+        <li><span>France</span><kbd>Round 5</kbd></li>
+        <li><span>Mexico</span><kbd>Round 6</kbd></li>
+        <li><span>China</span><kbd>Round 7</kbd></li>
+        <li><span>USA</span><kbd>Finals</kbd></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="page-grid" aria-label="Stage design notes">
+    <article class="page-card">
+      <div class="page-card__body">
+        <h2>Readable Floor</h2>
+        <p>Each backdrop keeps a clear fight lane so sprites, hit sparks, and knockdowns stay visible.</p>
+      </div>
+    </article>
+    <article class="page-card">
+      <div class="page-card__body">
+        <h2>Country Identity</h2>
+        <p>The arenas carry local color without hiding the fighters behind busy foreground detail.</p>
+      </div>
+    </article>
+    <article class="page-card">
+      <div class="page-card__body">
+        <h2>Performance</h2>
+        <p>The stages use one strip asset during fights, so round changes stay fast.</p>
+      </div>
+    </article>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
+<title>Kaden Fighters: Rise of Reigen</title>
+<meta name="theme-color" content="#7d0e0e"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-title" content="Kaden Fighters"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<link rel="manifest" href="/site.webmanifest"/>
+<link rel="icon" href="/favicon.ico" sizes="any"/>
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"/>
+<link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png"/>
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png"/>
+<link rel="stylesheet" href="css/kfr-app.css"/>
+<!-- Boot + fight move sheets (sync ?v= with ASTRA_ASSET_VER in js/kfr-game.js). crossorigin=anonymous must match Image.crossOrigin so preload reuses the same fetch. -->
+<link rel="preload" as="image" href="assets/reigen_classic_row.png?v=53" crossorigin="anonymous" fetchpriority="low"/>
+<link rel="preload" as="image" href="assets/generated/astra_kaden_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_raijin_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_hikari_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_ren_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_yuki_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_marcus_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_aiko_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_luna_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_dante_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+<link rel="preload" as="image" href="assets/generated/astra_sari_chatgpt.png?v=53" crossorigin="anonymous" fetchpriority="high"/>
+</head>
+<body>
+<nav class="site-nav site-nav--game" aria-label="App pages">
+  <a class="site-nav__brand" href="index.html" aria-current="page">Kaden Fighters</a>
+  <a class="site-nav__link" href="characters.html">Fighters</a>
+  <a class="site-nav__link" href="stages.html">Stages</a>
+  <a class="site-nav__link" href="controls.html">Controls</a>
+  <a class="site-nav__link" href="leaderboard.html">Ranks</a>
+  <a class="site-nav__link" href="privacy.html">Privacy</a>
+</nav>
+<div id="wrap">
+  <div id="gameShell" role="application" aria-label="Kaden Fighters: Rise of Reigen">
+    <canvas id="game" width="1280" height="720" tabindex="0" title="Kaden Fighters: click or tap here if controls don’t respond"></canvas>
+    <div id="mobileControls">
+  <div class="mc-dpad" id="mcDpad">
+    <div class="mc-dpad-btn mc-left" data-key="arrowleft">&#8592;</div>
+    <div class="mc-dpad-btn mc-right" data-key="arrowright">&#8594;</div>
+    <div class="mc-dpad-btn mc-up" data-key="arrowup">&#8593;</div>
+    <div class="mc-dpad-btn mc-down" data-key="arrowdown">&#8595;</div>
+    <div class="mc-center"></div>
+  </div>
+  <div class="mc-actions">
+    <div class="mc-row">
+      <div class="mc-btn mc-special" data-key=" ">SP</div>
+      <div class="mc-btn mc-super" data-key="shift">SU</div>
+    </div>
+    <div class="mc-row">
+      <div class="mc-btn mc-punch" data-key="j">PUNCH</div>
+      <div class="mc-btn mc-kick" data-key="k">KICK</div>
+      <div class="mc-btn mc-enter" data-key="enter">ENTER</div>
+    </div>
+  </div>
+</div>
+<div class="main-menu" id="mainMenuHost" hidden aria-hidden="true" aria-label="Main menu">
+      <div class="mm-bg" aria-hidden="true">
+        <div class="mm-bg__art">
+          <img class="mm-bg__img" src="assets/main-menu-hero.png" alt="" decoding="async" fetchpriority="high" onerror="(function(m){m.onerror=function(){this.onerror=null;this.src='assets/menu-bg.svg'};m.src='assets/menu-main.png'})(this)"/>
+        </div>
+        <div class="mm-bg__base"></div>
+        <div class="mm-bg__side"></div>
+        <div class="mm-bg__sweep"></div>
+        <div class="mm-bg__torn"></div>
+        <div class="mm-bg__grid"></div>
+        <div class="mm-bg__vignette"></div>
+        <div class="mm-bg__noise"></div>
+      </div>
+      <div class="mm-fx" aria-hidden="true">
+        <div class="mm-bolt" aria-hidden="true"></div>
+        <div class="mm-fog1" aria-hidden="true"></div>
+        <div class="mm-fog2" aria-hidden="true"></div>
+      </div>
+      <div class="mm-arena" aria-hidden="true">
+        <div class="mm-arena__floor" aria-hidden="true"></div>
+        <div class="mm-arena__ring" aria-hidden="true"></div>
+        <div class="mm-arena__glow" aria-hidden="true"></div>
+        <div class="mm-arena__vs" aria-hidden="true">VS</div>
+      </div>
+      <div class="mm-frame" aria-hidden="true"></div>
+      <nav class="mm-list--center" aria-label="Menu modes">
+        <label class="mm-select__label" for="mmModeSelect">Choose a mode</label>
+        <div class="mm-select-wrap">
+        <select id="mmModeSelect" class="mm-select" aria-label="Game mode" autocomplete="off">
+          <option value="story" data-id="story">Story &middot; Follow the rise</option>
+          <option value="versus" data-id="versus">Versus &middot; Local 2-player</option>
+          <option value="tournament" data-id="tournament">Tournament &middot; Climb the bracket</option>
+          <option value="training" data-id="training">Training &middot; Move lab, dummy</option>
+          <option value="options" data-id="options">Options &middot; Difficulty &amp; more</option>
+          <option value="extras" data-id="extras">Extras &middot; Unlocks &amp; gallery</option>
+          <option value="store" data-id="store">Store &middot; Cosmetics (soon)</option>
+          <option value="exit" data-id="exit">Exit &middot; Close to title</option>
+        </select>
+        </div>
+      </nav>
+      <p class="mm-hint" aria-hidden="true">
+        <span><kbd>↑</kbd><kbd>↓</kbd> or list &middot; <kbd>Enter</kbd> to start &middot; <kbd>H</kbd> ranks &middot; <kbd>N</kbd> name</span>
+      </p>
+      <div class="mm-aux" aria-label="Header shortcuts">
+        <button type="button" data-id="leaderboard" title="Global scoreboard (H)">Ranks</button>
+        <button type="button" data-id="profile" title="Name for scoreboard (N)">Name</button>
+        <button type="button" data-id="fullscreen" title="Fullscreen (desktop)">Fullscreen</button>
+      </div>
+      <dialog class="mm-exit" id="mmExitDlg" role="alertdialog" aria-modal="true" aria-labelledby="mmExH" aria-describedby="mmExP">
+        <h2 class="mm-exit__h" id="mmExH">Exit to title</h2>
+        <p class="mm-exit__p" id="mmExP">Return to a fresh title screen? Tournament progress in this run will be reset (same as a full restart to menu).</p>
+        <div class="mm-exit__row">
+          <button type="button" class="mm-exit__cancel" autofocus>Cancel</button>
+          <button type="button" class="mm-exit__ok">Confirm</button>
+        </div>
+      </dialog>
+    </div>
+    <div class="lb-root" id="leaderboardHost" hidden aria-hidden="true" aria-label="Global scoreboard">
+      <div class="lb-bg" aria-hidden="true">
+        <div class="lb-bg__art">
+          <img class="lb-bg__art-img" src="assets/leaderboard-hero.png" alt="" decoding="async" onerror="this.onerror=null;this.src='assets/leaderboard-bg.png'"/>
+        </div>
+        <div class="lb-bg__base"></div>
+        <div class="lb-bg__glow"></div>
+        <div class="lb-bg__sweep"></div>
+        <div class="lb-bg__noise"></div>
+      </div>
+      <div class="lb-dim" aria-hidden="true"></div>
+      <div class="lb-title-wrap" id="lbTitleWrap">
+        <h2 class="lb-title">Kaden Fighters: Rise of Reigen</h2>
+        <p class="lb-sub">Global leaderboards &mdash; sort, search, or view details. Esc: menu</p>
+      </div>
+      <div id="lbLoad" role="status" aria-live="polite" style="display:none;position:absolute;left:50%;transform:translateX(-50%);top:10.5%;z-index:4;background:rgba(0,0,0,.55);padding:0.25em 0.5em;border-radius:6px;font:0.75em system-ui">Loading&hellip;</div>
+      <div id="lbErr" role="note" style="display:none;position:absolute;right:1%;top:10.5%;max-width:40%;z-index:4;padding:0.2em 0.4em;font:0.7rem system-ui">Server unavailable — local + sample.</div>
+      <div class="lb-toolbar" role="toolbar" aria-label="Controls">
+        <div id="lbTabs" class="btn-group" role="tablist" aria-label="View">
+          <button type="button" class="lb-tab" role="tab" data-tab="global" aria-pressed="true">Global</button>
+          <button type="button" class="lb-tab" role="tab" data-tab="friends" aria-pressed="false">Friends</button>
+          <button type="button" class="lb-tab" role="tab" data-tab="weekly" aria-pressed="false">Weekly</button>
+          <button type="button" class="lb-tab" role="tab" data-tab="alltime" aria-pressed="false">All-Time</button>
+        </div>
+        <input class="lb-srch" type="search" id="lbSearch" placeholder="Search name or fighter&hellip;" enterkeyhint="search" />
+        <button type="button" class="lb-refresh" id="lbRefresh" title="Reload (local + API)">&#x21bb; Refresh</button>
+        <button type="button" class="lb-back" id="lbBack" title="Main menu (Esc)">Back</button>
+      </div>
+      <div class="lb-mid" role="region" aria-label="Table">
+        <div id="lbTableWrap" role="region" aria-label="Leaderboard table">
+          <table id="lbTable" aria-rowcount="0" aria-label="Top players">
+            <thead>
+              <tr>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="rank" aria-pressed="true" title="Sort by rank / score">Rank</button></th>
+                <th><button type="button" class="lb-th-sort" data-sort="playerName" aria-pressed="false" id="thName">Player</button></th>
+                <th>Fighter</th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="wins" aria-pressed="false">Wins</button></th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="kos" aria-pressed="false">K.O.s</button></th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="winRate" aria-pressed="false">Win %</button></th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="bestCombo" aria-pressed="false" title="Sort by best combo">Best Cmb</button></th>
+                <th class="num"><button type="button" class="lb-th-sort" data-sort="highScore" aria-pressed="false">High Score</button></th>
+              </tr>
+            </thead>
+            <tbody id="lbTbody"></tbody>
+          </table>
+        </div>
+        <div class="lb-y-wrap" id="lbYouPanel">
+          <div id="lbYou" aria-label="Your rank">
+            <div class="y-label"><strong>Your run</strong> (local) &middot; name: <span id="lbYName">KADEN</span></div>
+            <span>Rank</span><strong id="lbYRank">&mdash;</strong>
+            <span>Wins</span><strong id="lbYWins">0</strong>
+            <span>K.O.s</span><strong id="lbYKo">0</strong>
+            <span>Win %</span><strong id="lbYWr">0%</strong>
+            <span>High</span><strong id="lbYHi">0</strong>
+          </div>
+        </div>
+      </div>
+      <dialog class="lb-dlg" id="lbDetail" aria-labelledby="lpDetH" aria-modal="true">
+        <h3 id="lpDetH">Fighter details</h3>
+        <div class="lb-dlg__grid">
+          <div>Name</div><div id="dlName">&mdash;</div>
+          <div>Fighter</div><div id="dlFighter">&mdash;</div>
+          <div>Wins</div><div id="dlWins">0</div>
+          <div>Losses</div><div id="dlLosses">0</div>
+          <div>K.O.s</div><div id="dlKo">0</div>
+          <div>Win rate</div><div id="dlWrate">0%</div>
+          <div>Favorite</div><div id="dlFav">&mdash;</div>
+          <div>Best combo</div><div id="dlCombo">0</div>
+          <div>High score</div><div id="dlHi">0</div>
+        </div>
+        <div class="lb-dlg__bt">
+          <button type="button" id="lbDetClose" autofocus>Close</button>
+          <button type="button" id="dlOk">OK</button>
+        </div>
+      </dialog>
+    </div>
+  </div>
+</div>
+<script src="js/main-menu.js?v=9"></script>
+<script src="js/leaderboardData.js?v=9"></script>
+<script src="js/leaderboard-screen.js?v=9"></script>
+<script src="js/kfr-game.js?v=62"></script>
+</body>
+</html>

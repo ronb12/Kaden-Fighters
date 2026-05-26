@@ -1,0 +1,13 @@
+{
+  "appId": "com.ronellbradley.kadenfighters",
+  "appName": "Kaden Fighters",
+  "webDir": "dist/ios-web",
+  "ios": {
+    "contentInset": "always",
+    "preferredContentMode": "mobile",
+    "scheme": "KadenFighters"
+  },
+  "server": {
+    "iosScheme": "https"
+  }
+}

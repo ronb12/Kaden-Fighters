@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="17132" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="01J-lp-oVM">
+    <device id="retina4_7" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <deployment identifier="iOS"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="17105"/>
+        <capability name="System colors in document resources" minToolsVersion="11.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <scenes>
+        <!--View Controller-->
+        <scene sceneID="EHf-IW-A2E">
+            <objects>
+                <viewController id="01J-lp-oVM" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="splash-root">
+                        <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
+                        <autoresizingMask key="autoresizingMask"/>
+                        <subviews>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="Splash" translatesAutoresizingMaskIntoConstraints="NO" id="splash-bg">
+                                <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
+                            </imageView>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="splash-shade">
+                                <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
+                                <color key="backgroundColor" red="0.039215686274509803" green="0.027450980392156862" blue="0.027450980392156862" alpha="0.34999999999999998" colorSpace="custom" customColorSpace="sRGB"/>
+                            </view>
+                            <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" alignment="center" spacing="8" translatesAutoresizingMaskIntoConstraints="NO" id="splash-title-stack">
+                                <rect key="frame" x="36" y="260" width="303" height="96"/>
+                                <subviews>
+                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="KADEN FIGHTERS" textAlignment="center" lineBreakMode="tailTruncation" numberOfLines="1" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="YES" minimumScaleFactor="0.55" translatesAutoresizingMaskIntoConstraints="NO" id="splash-title">
+                                        <rect key="frame" x="0.0" y="0.0" width="303" height="62"/>
+                                        <fontDescription key="fontDescription" type="boldSystem" pointSize="42"/>
+                                        <color key="textColor" red="1" green="0.87450980392156863" blue="0.42745098039215684" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                        <nil key="highlightedColor"/>
+                                    </label>
+                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="RISE OF REIGEN" textAlignment="center" lineBreakMode="tailTruncation" numberOfLines="1" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="YES" minimumScaleFactor="0.65000000000000002" translatesAutoresizingMaskIntoConstraints="NO" id="splash-subtitle">
+                                        <rect key="frame" x="60" y="70" width="183" height="26"/>
+                                        <fontDescription key="fontDescription" type="boldSystem" pointSize="18"/>
+                                        <color key="textColor" red="0.95294117647058818" green="0.16470588235294117" blue="0.12549019607843137" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                        <nil key="highlightedColor"/>
+                                    </label>
+                                </subviews>
+                            </stackView>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea" id="safe-area"/>
+                        <color key="backgroundColor" red="0.039215686274509803" green="0.027450980392156862" blue="0.027450980392156862" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <constraints>
+                            <constraint firstItem="splash-bg" firstAttribute="top" secondItem="splash-root" secondAttribute="top" id="bg-top"/>
+                            <constraint firstAttribute="bottom" secondItem="splash-bg" secondAttribute="bottom" id="bg-bottom"/>
+                            <constraint firstAttribute="trailing" secondItem="splash-bg" secondAttribute="trailing" id="bg-trailing"/>
+                            <constraint firstItem="splash-bg" firstAttribute="leading" secondItem="splash-root" secondAttribute="leading" id="bg-leading"/>
+                            <constraint firstItem="splash-shade" firstAttribute="top" secondItem="splash-root" secondAttribute="top" id="shade-top"/>
+                            <constraint firstAttribute="bottom" secondItem="splash-shade" secondAttribute="bottom" id="shade-bottom"/>
+                            <constraint firstAttribute="trailing" secondItem="splash-shade" secondAttribute="trailing" id="shade-trailing"/>
+                            <constraint firstItem="splash-shade" firstAttribute="leading" secondItem="splash-root" secondAttribute="leading" id="shade-leading"/>
+                            <constraint firstItem="splash-title-stack" firstAttribute="centerX" secondItem="splash-root" secondAttribute="centerX" id="title-center-x"/>
+                            <constraint firstItem="splash-title-stack" firstAttribute="centerY" secondItem="splash-root" secondAttribute="centerY" constant="-14" id="title-center-y"/>
+                            <constraint firstItem="splash-title-stack" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="safe-area" secondAttribute="leading" constant="24" id="title-leading"/>
+                            <constraint firstItem="safe-area" firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="splash-title-stack" secondAttribute="trailing" constant="24" id="title-trailing"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="iYj-Kq-Ea1" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="53" y="375"/>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="Splash" width="2732" height="2732"/>
+        <systemColor name="systemBackgroundColor">
+            <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+        </systemColor>
+    </resources>
+</document>

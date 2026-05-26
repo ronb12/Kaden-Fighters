@@ -11,21 +11,43 @@ if [[ -z "$VER" ]]; then
   exit 1
 fi
 
-python3 -m http.server 8765 --bind 127.0.0.1 &
+PORT="${PORT:-8876}"
+python3 -m http.server "$PORT" --bind 127.0.0.1 &
 PID=$!
 trap 'kill "$PID" 2>/dev/null || true' EXIT
-sleep 0.4
-BASE="http://127.0.0.1:8765"
+BASE="http://127.0.0.1:$PORT"
+
+for _ in $(seq 1 25); do
+  if ! kill -0 "$PID" 2>/dev/null; then
+    echo "Local HTTP server exited before readiness check completed" >&2
+    exit 1
+  fi
+  if curl -s -o /dev/null "$BASE/index.html"; then
+    break
+  fi
+  sleep 0.2
+done
+
+if ! curl -s -o /dev/null "$BASE/index.html"; then
+  echo "Local HTTP server did not become ready at $BASE" >&2
+  exit 1
+fi
 
 urls=(
   "$BASE/index.html"
   "$BASE/js/kfr-game.js?v=$VER"
   "$BASE/assets/reigen_classic_row.png?v=$VER"
-  "$BASE/assets/astra_fighter_sheet.png?v=$VER"
-  "$BASE/assets/astra_raijin.png?v=$VER"
-  "$BASE/assets/astra_hikari.png?v=$VER"
-  "$BASE/assets/astra_ren.png?v=$VER"
-  "$BASE/assets/astra_yuki.png?v=$VER"
+  "$BASE/assets/generated/country-stages-strip.png?v=$VER"
+  "$BASE/assets/generated/astra_kaden_chatgpt.png?v=$VER"
+  "$BASE/assets/generated/astra_raijin_chatgpt.png?v=$VER"
+  "$BASE/assets/generated/astra_hikari_chatgpt.png?v=$VER"
+  "$BASE/assets/generated/astra_ren_chatgpt.png?v=$VER"
+  "$BASE/assets/generated/astra_yuki_chatgpt.png?v=$VER"
+  "$BASE/assets/generated/astra_marcus_chatgpt.png?v=$VER"
+  "$BASE/assets/generated/astra_aiko_chatgpt.png?v=$VER"
+  "$BASE/assets/generated/astra_luna_chatgpt.png?v=$VER"
+  "$BASE/assets/generated/astra_dante_chatgpt.png?v=$VER"
+  "$BASE/assets/generated/astra_sari_chatgpt.png?v=$VER"
   "$BASE/assets/kaden-gameplay.png?v=$VER"
   "$BASE/assets/kaden_taekwondo_sheet.png?v=$VER"
   "$BASE/assets/raijin_taekwondo_sheet.png?v=$VER"
@@ -33,7 +55,6 @@ urls=(
   "$BASE/assets/ren_aikido_sheet.png?v=$VER"
   "$BASE/assets/yuki_judo_sheet.png?v=$VER"
   "$BASE/assets/main-menu-hero.png"
-  "$BASE/assets/stages-strip.png"
   "$BASE/assets/game-over.png"
 )
 

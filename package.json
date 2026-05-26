@@ -5,12 +5,20 @@
   "description": "Kaden Fighter — static HTML canvas game for Vercel",
   "scripts": {
     "start": "python3 -m http.server 8765",
-    "verify:sprites": "bash scripts/sprite-asset-smoke.sh"
+    "verify:sprites": "bash scripts/sprite-asset-smoke.sh",
+    "ios:web": "bash scripts/build-ios-web.sh",
+    "ios:sync": "bash scripts/sync-ios-project.sh",
+    "ios:open": "npm run ios:sync && open \"ios/App/Kaden Fighters.xcodeproj\""
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
+    "@capacitor/ios": "^8.3.1"
   }
 }
